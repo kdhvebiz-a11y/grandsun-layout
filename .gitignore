@@ -1,0 +1,5 @@
+datago.txt
+template/
+__pycache__/
+*.pyc
+*.json

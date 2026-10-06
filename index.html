@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>그랜드썬 태양광 배치 분석기</title>
+<link rel="stylesheet" href="lib/leaflet.css">
+<style>
+:root{--bg:#eef1f5;--panel:#fff;--line:#d9dfe7;--ink:#1c2430;--mute:#66727f;--acc:#1f6feb;--acc2:#e8f0fe;--warn:#b35c00}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;font-family:"Malgun Gothic","Apple SD Gothic Neo",sans-serif;color:var(--ink);background:var(--bg);font-size:13px}
+#top{height:46px;background:#14213d;color:#fff;display:flex;align-items:center;gap:18px;padding:0 16px}
+#top b{font-size:15px}
+#top .band{margin-left:auto;display:flex;gap:14px;font-size:12px;color:#cbd5e1}
+#top .band b{color:#fff;font-size:12px}
+#app{display:grid;grid-template-columns:340px minmax(0,1fr) 370px;height:calc(100% - 46px);width:100vw;overflow:hidden}#app.step:not(.on){display:none}
+.pane{background:var(--panel);overflow-y:auto;overflow-x:hidden;padding:12px 14px;display:flex;flex-direction:column;gap:10px}
+#side{border-right:1px solid var(--line)}#right{border-left:1px solid var(--line)}
+fieldset{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:0;min-width:0}
+legend{font-size:12px;font-weight:700;color:var(--acc);padding:0 4px}
+.row{display:flex;gap:6px;align-items:center;margin:4px 0}
+.row label{flex:0 0 96px;font-size:12px;color:var(--mute)}
+.row input,.row select{flex:1;min-width:0;padding:5px 6px;border:1px solid var(--line);border-radius:6px;font-size:13px}
+.row .unit{flex:0 0 26px;font-size:11px;color:var(--mute)}
+.row .x{flex:0 0 12px;text-align:center;font-size:11px;color:var(--mute)}
+button{padding:6px 9px;border:1px solid var(--line);border-radius:6px;background:#fff;font-size:12.5px;cursor:pointer}
+button.pri{background:var(--acc);color:#fff;border-color:var(--acc)}
+button.on{background:var(--acc2);border-color:var(--acc);color:var(--acc)}
+.btns{display:flex;flex-wrap:wrap;gap:6px}.btns button{flex:1 1 auto}
+.search{display:flex;gap:6px}.search input{flex:1;padding:6px 8px;border:1px solid var(--line);border-radius:6px}
+#msg{font-size:12px;color:var(--warn);min-height:16px}
+#mapwrap{position:relative;min-width:0;overflow:hidden}
+#tabs,#mapopts{position:absolute;top:10px;z-index:1000;display:flex;gap:4px;background:#fff;padding:4px;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.25)}
+#tabs{left:10px}#mapopts{left:300px}
+#tabs button,#mapopts button{border:0;padding:5px 10px;border-radius:6px}
+#tabs button.on{background:var(--acc);color:#fff}#mapopts button.on{background:#fde68a}
+.map{position:absolute;inset:0;display:none}.map.on{display:block}
+#hint{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);z-index:1000;background:rgba(20,33,61,.88);color:#fff;font-size:13px;padding:7px 14px;border-radius:20px;pointer-events:none;display:none}
+#blist{display:flex;flex-direction:column;gap:6px}
+.bld{border:1px solid var(--line);border-radius:8px;padding:7px 9px;display:grid;grid-template-columns:18px 1fr auto;gap:3px 8px;align-items:center;cursor:pointer}
+.bld.sel{border-color:var(--acc);background:#f5f8ff}
+.bld .nm{font-weight:700}
+.bld .nm input{border:0;background:transparent;font:inherit;font-weight:700;width:100%;padding:0}
+.bld .ty{grid-column:2/4;display:flex;gap:4px;align-items:center;font-size:12px}
+.bld .ty select{flex:1;min-width:0;max-width:100%;padding:3px 4px;border:1px solid var(--line);border-radius:5px;font-size:12px}.bld .ty span,.bld .ty button{white-space:nowrap}.bld .ty input[type=range]{flex:1;min-width:50px;width:50px}.bld .ty input[type=number]{flex:none;min-width:0}.bld .ty input[type=text]{min-width:0}.bld .ty>span:first-child{width:52px;flex:none;color:#66727f}.bld{min-width:0}.bld .st{grid-column:2/4;font-size:11px;color:#66727f;line-height:1.5}
+.bld .st{grid-column:2/4;font-size:12px;color:var(--mute)}.bld .st b{color:var(--ink)}
+.bld .del{font-size:11px;color:var(--mute);border:0;background:none;padding:0 2px}
+#stats{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.stat{background:var(--bg);border-radius:8px;padding:7px 9px}.stat b{display:block;font-size:19px;line-height:1.2}.stat span{font-size:11px;color:var(--mute)}
+table.sum{width:100%;border-collapse:collapse;font-size:12px}table.sum td{padding:3px 2px;border-bottom:1px solid var(--line)}table.sum td:last-child{text-align:right;font-weight:700}
+.tiny{font-size:11px;color:var(--mute)}
+.lbl{background:rgba(255,255,255,.92);border:1px solid #d1242f;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;white-space:nowrap;color:#1c2430}
+.lbl b{color:#d1242f}
+.bld details.bi{flex:1;font-size:11px}.bld details.bi summary{cursor:pointer;color:#1f4fd1}.bld details.bi table{width:100%;border-collapse:collapse;margin-top:3px}.bld details.bi td{border-bottom:1px solid #eef1f4;padding:2px 4px;font-size:11px}.bld details.bi td:first-child{color:#66727f;width:40%}
+details.rl{border:1px solid var(--line);border-radius:6px;padding:4px 8px;margin-top:6px;background:#fafbfc}
+details.rl>summary{cursor:pointer;font-size:12px;font-weight:700;color:#1c2430}
+details.rl[open]>summary{margin-bottom:4px;color:#1f4fd1}
+.colh{width:18px;height:18px;border-radius:50%;cursor:grab;background:rgba(255,212,0,.001)}
+.colh:hover{box-shadow:0 0 0 3px rgba(255,212,0,.6)}
+.coldot{width:10px;height:10px;border-radius:50%;background:#ffd400;border:1.5px solid #111;margin:-5px 0 0 -5px}
+#steps{display:flex;gap:2px;margin-left:10px}#steps button{border:0;background:transparent;color:#cbd5e1;padding:6px 10px;border-radius:6px;font-size:13px}#steps button.on{background:#fff;color:#14213d;font-weight:700}
+.step{display:none}.step.on{display:grid}
+section.step.on{display:block;height:calc(100% - 46px);overflow:auto;padding:16px}
+.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px 20px;max-width:1100px;margin:0 auto}
+.card h2{font-size:16px;margin:0 0 12px}.card h3{font-size:14px;margin:8px 0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:4px 24px}.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px 18px}.opts{display:flex;flex-wrap:wrap;gap:6px 16px;margin:8px 0;font-size:12.5px}.opts label{display:flex;align-items:center;gap:4px}.opts select{padding:3px;border:1px solid var(--line);border-radius:5px}table.qt.small{font-size:11.5px}table.qt.small td,table.qt.small th{padding:3px 5px;text-align:right}table.qt.small td:first-child,table.qt.small th:first-child{text-align:center}details.internal{border:1px dashed #d1242f;border-radius:8px;padding:6px 10px;margin-top:8px}details.internal summary{color:#d1242f;font-weight:700;font-size:12.5px}label.file{border:1px solid var(--line);border-radius:6px;padding:6px 9px;font-size:12.5px;cursor:pointer}label.file input{display:none}.grid2 .row label{flex:0 0 110px}
+table.qt{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}table.qt th,table.qt td{border-bottom:1px solid var(--line);padding:6px 6px;text-align:left}table.qt th{background:var(--bg);font-size:12px;color:var(--mute)}
+table.qt td:nth-child(3),table.qt td:nth-child(4),table.qt th:nth-child(3),table.qt th:nth-child(4){text-align:right}
+table.qt input{width:100%;border:1px solid transparent;padding:3px 4px;border-radius:4px;font:inherit;background:transparent}table.qt input:focus{border-color:var(--acc);background:#fff}table.qt input.num{text-align:right}
+table.qt tfoot td{font-weight:700}table.qt tr.tot td{font-size:15px;border-top:2px solid var(--ink)}
+.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:12px 0}.kpis .stat b{font-size:18px}
+.prev{margin-top:10px;border:1px dashed var(--line);border-radius:8px;min-height:120px;display:flex;align-items:center;justify-content:center;color:var(--mute);font-size:12px;overflow:hidden}.prev img{max-width:100%;display:block}
+.sumbox{background:var(--bg);border-radius:8px;padding:10px;font-size:12px;white-space:pre-wrap;min-height:120px;margin-top:10px}
+/* 배치도 도면 시트 */
+#sheet{display:none}
+#sheet.on{display:block;position:fixed;inset:0;background:#555;z-index:3000;overflow:auto;padding:20px}
+.sh{width:1400px;height:990px;background:#fff;margin:0 auto;position:relative;border:2px solid #000;padding:14px;box-sizing:border-box;font-family:"Malgun Gothic",sans-serif;color:#000}
+.sh .inner{position:absolute;inset:14px;border:1px solid #000}
+.sh .img{position:absolute;left:40px;top:40px;width:1040px;height:680px;border:1px solid #000;overflow:hidden;background:#ddd}
+.sh .img img,.sh .img canvas{width:100%;height:100%;object-fit:cover;display:block}
+.sh .north{position:absolute;left:14px;top:14px;font-size:22px;font-weight:700}
+.sh .side{position:absolute;left:1100px;top:40px;width:260px}
+.sh .side table{width:100%;border-collapse:collapse;font-size:12px}.sh .side td,.sh .side th{border:1px solid #000;padding:4px 6px}.sh .side th{background:#f0f0f0}
+.sh .sumtbl{position:absolute;left:40px;top:770px;width:1040px;border-collapse:collapse;font-size:14px;text-align:center}.sh .sumtbl td,.sh .sumtbl th{border:1px solid #000;padding:6px}
+.sh .tb{position:absolute;left:40px;right:40px;bottom:30px;height:60px;border:1px solid #000;display:grid;grid-template-columns:2fr 1fr 2.5fr 1fr 1.2fr 2fr 1fr;font-size:11px}
+.sh .tb div{border-right:1px solid #000;padding:4px 6px}.sh .tb div:last-child{border-right:0}.sh .tb small{display:block;color:#555;font-size:10px}
+.sh .title{position:absolute;left:40px;top:732px;color:#1f4fd1;font-weight:700;font-size:18px}
+.sh .close{position:fixed;top:12px;right:16px;z-index:3001}
+@media print{#sheet.on{position:static;background:#fff;padding:0}.sh{border:0;margin:0}.sh .close{display:none}body.printing>*:not(#sheet){display:none!important}}
+@media print{#side,#right,#tabs,#mapopts,#hint,#top{display:none!important}#app{grid-template-columns:1fr;height:100%}}
+</style>
+</head>
+<body>
+<div id="top"><b>그랜드썬 태양광 제안서 작성기</b>
+  <nav id="steps">
+    <button data-s="1">① 현장정보</button><button data-s="2" class="on">② 배치</button><button data-s="3">③ 견적</button><button data-s="4">④ 수익성</button><button data-s="5">⑤ 제안서 출력</button>
+  </nav>
+  <div class="band"><span>용량 <b id="bKw">0</b> kW</span><span>모듈 <b id="bN">0</b> 장</span><span>판매단가 <b id="bPrice">—</b> 원/kWh</span><span>일 발전시간 <b id="bHrs">—</b> h</span></div></div>
+<section class="step" data-s="1">
+<div class="card">
+  <h2>① 현장·고객 정보</h2>
+  <div class="grid2">
+    <div class="row"><label>고객(회사)명</label><input id="f_customer" placeholder="예: ○○산업(주)"></div>
+    <div class="row"><label>대표자</label><input id="f_ceo"></div>
+    <div class="row"><label>담당자 / 연락처</label><input id="f_contact" placeholder="홍길동 010-0000-0000"></div>
+    <div class="row"><label>제안일</label><input id="f_date" type="date"></div>
+    <div class="row"><label>현장 주소</label><input id="f_addr" placeholder="지번 또는 도로명 — ②배치의 검색과 연동"></div>
+    <div class="row"><label>현장명</label><input id="f_site" placeholder="예: ○○산업 김해공장"></div>
+    <div class="row"><label>사업형태</label><select id="f_biz">
+      <option value="fit">발전사업 — 장기고정가격계약(입찰)</option>
+      <option value="spot">발전사업 — 현물시장(SMP+REC)</option>
+      <option value="self">자가소비 — 상계·단순병렬</option>
+      <option value="lease">지붕 임대</option></select></div>
+    <div class="row"><label>계약전력</label><input id="f_kepco" type="number" placeholder="kW (자가소비·수전 검토용)"><span class="unit">kW</span></div>
+    <div class="row"><label>그랜드썬 담당</label><input id="f_sales" placeholder="영업 담당자"></div>
+    <div class="row"><label>비고</label><input id="f_memo"></div>
+  </div>
+  <div class="btns" style="margin-top:10px;justify-content:flex-end"><button class="pri" data-go="2">다음 → ② 배치</button></div>
+</div>
+</section>
+
+<div id="app" class="step on" data-s="2">
+<aside id="side" class="pane">
+  <fieldset><legend>1. 위치</legend>
+    <div class="search"><input id="addr" placeholder="지번·도로명 주소 또는 상호"><button id="goAddr" class="pri">검색</button></div>
+    <div class="row" style="margin-top:6px"><label>현장명</label><input id="site" placeholder="예: 경남 김해시 대동면 월촌리 1296-2"></div>
+  </fieldset>
+
+  <fieldset><legend>2. 건물·토지 선택</legend>
+    <div class="btns">
+      <button id="loadBox" class="pri">화면 안 건물 불러오기</button>
+      <button id="mPick" class="on">클릭으로 체크/해제</button>
+      <button id="mDraw">토지·면 직접 그리기</button>
+      <button id="mStrip">주차열 선 따라 캐노피</button>
+    </div>
+    <div class="btns" style="margin-top:6px"><button id="undo">한 점 되돌리기</button><button id="finish">그리기 완료</button><button id="clearAll">전체 지우기</button></div>
+    <div class="tiny" style="margin-top:4px">건물을 클릭하면 건물, <b>빈 땅·주차장을 클릭하면 그 필지</b>가 선택됩니다(건물 자리는 자동으로 비움). 둘 다 없으면 「직접 그리기」. 지도는 줌 13 이상에서 건물이 조회됩니다.</div>
+    <details style="margin-top:6px"><summary style="cursor:pointer;font-size:12px;font-weight:700;color:#1f4fd1">✎ 배치 손보기 — 모듈 지우기 · 장애물 · 주차장 기둥</summary>
+      <div class="btns" style="margin-top:6px">
+        <button id="mErase" style="color:#d1242f">모듈 지우기 (클릭·드래그)</button>
+        <button id="mObs">장애물 찍기</button>
+        <button id="mObsDraw">장애물 그리기</button>
+        <button id="obsClear">장애물 모두 삭제</button>
+        <button id="mCol">주차장 기둥 추가</button>
+      </div>
+      <div class="row" style="margin-top:4px"><label>장애물 크기 / 여유</label><input id="obsSize" type="number" value="1.5" step="0.5" style="padding:5px 4px"><span class="x">m</span><input id="obsGap" type="number" value="0.5" step="0.1" style="padding:5px 4px"><span class="unit">m</span></div>
+      <div class="tiny">지우기: 모듈 클릭 한 장, 드래그 사각형이면 여러 장 (카드의 「복원」으로 되돌림). 장애물: 벤츄레이터·옥탑 자리를 클릭하면 네모로 비움, 큰 건 그리기, 우클릭 삭제. 기둥: 노란 점 끌어서 이동·우클릭 삭제.</div>
+    </details>
+  </fieldset>
+
+  <fieldset><legend>3. 모듈</legend>
+    <div class="row"><label>모듈</label><select id="modPreset">
+      <option value="645,2465,1134">현대 645Wp 양면 2,465×1,134</option>
+      <option value="600,2278,1134">600Wp 2,278×1,134</option>
+      <option value="580,2278,1134">580Wp 2,278×1,134</option>
+      <option value="custom">직접 입력</option></select></div>
+    <div class="row"><label>출력</label><input id="wp" type="number" value="645"><span class="unit">W</span></div>
+    <div class="row"><label>크기</label><input id="mw" type="number" value="2465" style="padding:5px 4px"><span class="x">×</span><input id="mh" type="number" value="1134" style="padding:5px 4px"><span class="unit">mm</span></div>
+  </fieldset>
+
+  <fieldset><legend>4. 설치형태 규칙 <span class="tiny">(사내 설치기준·CAD 스크립트 gs ver4)</span></legend>
+    <div class="row"><label>새 건물 기본형태</label><select id="defType">
+      <option value="A">A 원단형 — 경사지붕 10° 거치, 단 구성</option>
+      <option value="B">B 인삼밭 1단 — 1열 피치 3.5m</option>
+      <option value="D">D 인삼밭 플랫 2단 — 2열 밴드 7m 피치</option>
+      <option value="F">F 부착형 — 징크·제로솔루션 가로배치</option>
+      <option value="C">C 토지·평슬라브 — 경사거치 2~4단</option>
+      <option value="E">E 주차장 캐노피 — 주차열 5m + 통로 6m</option></select></div>
+    <div class="row"><label>가장자리 여유</label><input id="margin" type="number" value="0.5" step="0.1"><span class="unit">m</span></div>
+    <input id="cgap" type="hidden" value="0.01"><input id="azim" type="hidden" value="">
+    <div class="row"><label>건축물대장 자동조회</label><label style="flex:1;font-size:12px"><input id="brAuto" type="checkbox" checked> 체크한 건물의 높이·지붕을 자동으로 가져와 형태 추천 적용 (직접 고른 형태는 유지)</label></div>
+    <div class="tiny">형태·방향·단 구성·경계 이격은 <b>아래 건물 카드에서 건물마다</b> 바꿉니다. 여기는 공통 기본값.</div>
+    <details class="rl"><summary>A 원단형 (경사지붕)</summary>
+      <div class="row"><label>최대 구조물 높이</label><input id="maxH" type="number" value="4.0" step="0.5"><span class="x">m</span><input id="roofSlope" type="number" value="10" step="1" title="지붕 경사각 기본값(°). 항목별로 카드에서 변경"><span class="unit">° 지붕</span></div>
+      <div class="row"><label>용마루 통풍로 폭</label><input id="ventA" type="number" value="0" step="0.1"><span class="unit">m</span></div>
+      <div class="tiny">단수는 지붕 폭으로 자동(≤13m 2단 … ≥45m 3·3·3단), 단 간 0.5m, 끝단 0.5m, <b>모듈 20장마다 1장 자리(1.134m) 바람구멍</b>. 카드 「단 구성」에 <code>2,3,4</code> · <code>3,3 / 2,2</code>(남쪽부터 / 북쪽부터) · <code>3,2,3,2</code> 처럼 적으면 그대로. 높이 초과 단은 자동 축소.</div>
+    </details>
+    <details class="rl"><summary>B·D 인삼밭 / 인삼밭 플랫</summary>
+      <div class="row"><label>2단: 열수 / 피치</label><input id="bandN" type="number" value="2" style="padding:5px 4px"><span class="x">열</span><input id="bandPitch" type="number" value="7.0" step="0.1" style="padding:5px 4px"><span class="unit">m</span></div>
+      <div class="row"><label>1단: 피치</label><input id="bandPitchB" type="number" value="3.5" step="0.1"><span class="unit">m</span></div>
+      <div class="tiny">인삼밭 끝단 0.7m. 10° 피치 3.5m, 15° 4.0m (설치기준 라벨)</div>
+    </details>
+    <details class="rl"><summary>C 토지·평슬라브 경사거치</summary>
+      <div class="row"><label>경사각 / 단수</label><input id="tiltC" type="number" value="10" style="padding:5px 4px"><span class="x">°</span><select id="tiersC" style="flex:1"><option value="auto">자동(3단 우선)</option><option value="2">2단</option><option value="3">3단</option><option value="4">4단</option></select></div>
+      <div class="row"><label>음영각</label><input id="shadeAng" type="number" value="22" step="1"><span class="unit">°</span></div>
+      <div class="tiny">단 사이 간격 자동 = 단길이×sin경사 ÷ tan음영각 → 10° 3단 3.2m, 2단 2.2m, 15° 3단 4.8m. 가로 20장마다 통로 1m. 토지는 카드의 「경계 이격」 1·2·3 버튼</div>
+    </details>
+    <details class="rl"><summary>F 부착형 (징크·제로솔루션)</summary><div class="tiny">가로배치 1단 연속, 끝단 0.7m, 20장마다 1장 바람구멍. 설치기준: 남쪽 지붕경사+7°, 북쪽 10°, 전기 +1만원/kW</div></details>
+    <details class="rl"><summary>E 주차장 캐노피</summary>
+      <div class="row"><label>주차열 / 통로</label><input id="eStall" type="number" value="5.0" step="0.5" style="padding:5px 4px"><span class="x">m</span><input id="eAisle" type="number" value="6.0" step="0.5" style="padding:5px 4px"><span class="unit">m</span></div>
+      <div class="row"><label>열 형태</label><select id="eDouble"><option value="1">1열 (한쪽 주차열 5m, 2장)</option><option value="2">등맞댐 2열 (5+0.6+5m, 4장)</option></select></div>
+      <div class="row"><label>선 기준 위치</label><select id="eSide"><option value="c">선이 주차열 중심</option><option value="l">선 왼쪽에 주차열</option><option value="r">선 오른쪽에 주차열</option></select></div>
+      <div class="row"><label>주차열 자동반복</label><label style="flex:1;font-size:12px"><input id="eAuto" type="checkbox" checked> 켜기 (면 선택 시 1열 → 통로 → 2열 → 통로… 반복)</label></div>
+      <div class="tiny">사내 도면 실측: 모듈 10° 세로 2장이 주차열 1칸(5m), 가로 피치 1.144m, 등맞댐 2열은 사이 600mm(기둥)에 4장. 통행로 6m 이상(법적). 기둥 2칸(5m)마다 자동.</div>
+    </details>
+    <div class="btns" style="margin-top:6px"><button id="run" class="pri">전체 다시 배치</button></div>
+  </fieldset>
+
+  <fieldset><legend>5. 발전·수익 가정</legend>
+    <div class="row"><label>일 발전시간</label><input id="hrs" type="number" value="3.6" step="0.1"><span class="unit">h</span></div>
+    <div class="row"><label>판매단가</label><input id="price" type="number" value="202.35" step="0.01"><span class="unit">원/kWh</span></div>
+    <div class="tiny">202.35 = 2026년 제1차 장기고정 가중환산단가(1.5가중·1등급). 자가소비는 한전 요금단가로.</div>
+  </fieldset>
+
+  <div class="btns"><button id="save">저장(JSON)</button><button id="load">불러오기</button><button id="print">인쇄/PDF</button></div>
+  <input id="file" type="file" accept=".json" style="display:none">
+  <div id="msg"></div>
+</aside>
+
+<div id="mapwrap">
+  <div id="tabs"><button data-m="k" class="on">카카오</button><button data-m="v">브이월드 항공</button><button data-m="g">구글 위성</button></div>
+  <div id="mapopts"><button id="optSat" class="on">🛰 위성</button><button id="optDist">🗺 지적편집도</button><button id="optLbl" class="on">🏷 용량 표시</button></div>
+  <div id="mapK" class="map on"></div>
+  <div id="mapV" class="map"></div>
+  <div id="mapG" class="map"></div>
+  <div id="hint"></div>
+</div>
+
+<aside id="right" class="pane">
+  <fieldset><legend>합계</legend>
+    <div id="stats">
+      <div class="stat"><b id="sN">0</b><span>모듈(장)</span></div>
+      <div class="stat"><b id="sKw">0</b><span>설비용량(kW)</span></div>
+      <div class="stat"><b id="sGen">0</b><span>연간 발전량(MWh)</span></div>
+      <div class="stat"><b id="sRev">0</b><span>연간 매출(백만원)</span></div>
+    </div>
+    <table class="sum" style="margin-top:6px"><tr><td>선택 건물·면</td><td id="sB">0</td></tr><tr><td>설치면 합계</td><td id="sArea">0 m²</td></tr><tr><td>모듈 면적</td><td id="sMA">0 m²</td></tr></table>
+  </fieldset>
+  <fieldset style="flex:1"><legend>건물별 (체크된 것만 집계)</legend>
+    <div id="blist"></div>
+    <div class="tiny" id="bEmpty">「화면 안 건물 불러오기」 후 지도에서 건물을 클릭하세요.</div>
+  </fieldset>
+</aside>
+</div>
+
+<section class="step" data-s="3">
+<div class="card">
+  <h2>③ 견적 <span class="tiny">— 사내 견적서(2026-09-29 단가표)와 같은 계산. 산출내역서는 고객용, 아래 내부 입금가는 사내용입니다.</span></h2>
+  <div class="grid3">
+    <div class="row"><label>설비용량</label><input id="q_kw" type="number" step="0.001"><span class="unit">kW</span></div>
+    <div class="row"><label>모듈</label><select id="q_mod"></select></div>
+    <div class="row"><label>사업</label><select id="q_biz"><option>건물 발전사업</option><option>토지 발전사업</option><option>자가소비</option></select></div>
+    <div class="row"><label>시공방식</label><select id="q_method"></select></div>
+    <div class="row"><label>인버터 보증</label><select id="q_warr"><option value="10">10년 (이노일렉트릭)</option><option value="7">7년</option><option value="5">5년</option></select></div>
+    <div class="row" id="q_selfRow" style="display:none"><label>자가소비 연계</label><select id="q_self"><option>역송병렬 MCCB</option><option>역송병렬 ACB</option><option>역송병렬 VCB</option><option>단순병렬 MCCB</option><option>단순병렬 ACB</option><option>단순병렬 VCB</option></select></div>
+  </div>
+  <div class="opts" id="q_opts">
+    <label><input type="checkbox" data-o="kpx"> KPX계량기</label><label><input type="checkbox" data-o="rsd"> RSD</label><label><input type="checkbox" data-o="remote"> 원격감시제어(1MW↑)</label>
+    <label><input type="checkbox" data-o="manager"> 현장관리자</label><label><input type="checkbox" data-o="rail"> 영구안전난간대</label><label><input type="checkbox" data-o="tempRail"> 임시안전난간대</label>
+    <label><input type="checkbox" data-o="fence" checked> 휀스</label><label><input type="checkbox" data-o="ladder" checked> 사다리</label>
+    <label>지붕보강 <select id="q_roof"><option value="">없음</option><option>샌드위치판넬</option><option>칼라강판</option><option>제로솔루션</option></select></label>
+  </div>
+  <table class="qt" id="q_items"><thead><tr><th>품번</th><th>항목</th><th>내용</th><th>용량·수량</th><th>단가</th><th>금액(원)</th></tr></thead><tbody></tbody></table>
+  <div class="btns" style="margin:6px 0"><button id="q_addRow">추가 항목(직접 입력)</button></div>
+  <table class="qt" id="q_ind"><tbody></tbody></table>
+  <div class="kpis" id="q_kpi"></div>
+  <details class="internal"><summary>사내용 — 내부 입금가·네고 (고객 자료에 넣지 말 것)</summary><div id="q_internal"></div></details>
+  <div class="btns" style="margin-top:8px"><span style="flex:1"></span><button data-go="2">← ② 배치</button><button class="pri" data-go="4">다음 → ④ 수익성</button></div>
+</div>
+</section>
+
+<section class="step" data-s="4">
+<div class="card">
+  <h2>④ 수익성 <span class="tiny">— 제안서 47~49쪽과 같은 계산(손익계산서 양식). 공사비는 ③ 견적 공사금액(VAT별도)이 자동으로 들어옵니다.</span></h2>
+  <div class="grid3">
+    <div class="row"><label>설비용량</label><input id="r_kw" type="number" step="0.001"><span class="unit">kW</span></div>
+    <div class="row"><label>1등급 공사비</label><input id="r_capex" type="number"><span class="unit">원</span></div>
+    <div class="row"><label>발전시간(기준)</label><select id="r_h"><option>3.6</option><option>3.8</option><option>4.0</option></select></div>
+    <div class="row"><label>보험료(년)</label><input id="r_ins" type="number"><span class="unit">원</span></div>
+    <div class="row"><label>전기안전관리비(년)</label><input id="r_safe" type="number"><span class="unit">원</span></div>
+    <div class="row"><label>한전연계비(VAT별도)</label><input id="r_kepco" type="number" value="-178000"><span class="unit">원</span></div>
+  </div>
+  <div id="r_kpi" class="kpis"></div>
+  <div id="r_chart"></div>
+  <details open><summary>1등급 연간매출 — 발전시간 3.6 / 3.8 / 4.0h (제안서 47쪽)</summary><table class="qt small" id="r_t47"></table></details>
+  <details><summary>등급별 연간매출·누적수익 20년 (제안서 49쪽)</summary><table class="qt small" id="r_t49"></table></details>
+  <details><summary>장기계약 vs 현물 누적 (제안서 48쪽)</summary><table class="qt small" id="r_t48"></table></details>
+  <div class="btns" style="margin-top:8px"><span style="flex:1"></span><button data-go="3">← ③ 견적</button><button class="pri" data-go="5">다음 → ⑤ 출력</button></div>
+</div>
+</section>
+
+<section class="step" data-s="5">
+<div class="card">
+  <h2>⑤ 제안서 출력</h2>
+  <div class="grid2">
+    <div>
+      <h3>1. 배치도 도면</h3>
+      <p class="tiny">②배치의 브이월드 항공사진을 기준으로 사내 도면 형식(항공사진 + 건물별 용량 라벨 + 모듈 요약표 + 표제란)으로 만듭니다. 제안서 37쪽에도 이 그림이 들어갑니다.</p>
+      <div class="btns"><button id="o_draw" class="pri">배치도 도면 만들기</button><button id="o_print">도면 인쇄/PDF</button></div>
+      <div id="o_prev" class="prev"></div>
+    </div>
+    <div>
+      <h3>2. 제안서 PPT</h3>
+      <p class="tiny">사내 양식(62쪽)의 표지 주소·37쪽 배치도·47~49쪽 수익표를 이 화면의 값으로 바꿔 넣습니다. 양식 파일은 <code>배치도\template\제안서_양식.pptx</code> 에 두면 자동으로 읽고, 없으면 아래에서 선택합니다.</p>
+      <div class="btns"><button id="o_ppt" class="pri">제안서 PPT 만들기</button><label class="file"><input type="file" id="o_tpl" accept=".pptx"> 양식 직접 선택</label></div>
+      <div class="tiny" id="o_pptMsg" style="margin-top:6px"></div>
+      <h3 style="margin-top:14px">3. 데이터</h3>
+      <div class="btns"><button id="o_json">제안서 데이터 저장(JSON)</button><button id="o_copy">요약 텍스트 복사</button></div>
+      <pre id="o_sum" class="sumbox"></pre>
+    </div>
+  </div>
+</div>
+</section>
+
+<div id="sheet"></div>
+
+<script src="lib/leaflet.js"></script>
+<script src="lib/jszip.min.js"></script>
+<script src="keys.js"></script>
+<script src="prices.js"></script>
+<script src="quote.js"></script>
+<script src="pptx.js"></script>
+<script src="app.js"></script>
+<script src="steps.js"></script>
+</body>
+</html>
