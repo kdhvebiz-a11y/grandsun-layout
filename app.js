@@ -2,7 +2,7 @@
 (function(){
 const K = window.KEYS;
 const $ = id => document.getElementById(id);
-const S = { b:[], obs:[], seq:1, mode:'pick', draw:[], maskFor:null, active:'k', center:[35.3100,128.9100], zoom:18, sat:true, dist:false, lbl:true };
+const S = { b:[], obs:[], seq:1, mode:'pick', sel:'bld', drawType:null, draw:[], maskFor:null, active:'k', center:[35.3100,128.9100], zoom:18, sat:true, dist:false, lbl:true };
 const msg = t => { $('msg').textContent = t||''; };
 const hint = t => { const h=$('hint'); h.textContent=t||''; h.style.display=t?'block':'none'; };
 const TYPE_NM = {A:'A 원단형 (경사지붕 10° 거치)',B:'B 인삼밭 1단 (피치 3.5m)',D:'D 인삼밭 플랫 2단 (피치 7m)',F:'F 부착형 (징크·제로솔루션 가로배치)',C:'C 토지·평슬라브 경사거치 (2~4단)',E:'E 주차장 캐노피'};
@@ -139,9 +139,10 @@ function layout(poly, R, holes, mask, azUser){
 
 const modCenter=q=>[(q[0][0]+q[2][0])/2,(q[0][1]+q[2][1])/2];
 const nearLL=(a,c,tol)=>Math.hypot((a[0]-c[0])*110574,(a[1]-c[1])*111320*Math.cos(a[0]*Math.PI/180))<tol;
+function kindLabel(b){ return b.kind==='parcel'?(b.whole?'전체 지번 · ':b.type==='E'?'주차장 필지 · ':'토지(건물 제외) · '):b.kind==='draw'?(b.type==='E'?'주차장(그림) · ':'직접 · '):b.kind==='strip'?'주차열 띠 · ':''; }
 function compute(b){
   if(!b.checked){ b.mods=[]; return; }
-  const holes=(b.kind==='bld'?[]:S.b.filter(x=>x!==b&&x.kind==='bld').map(x=>x.poly)).concat(S.obs.map(o=>o.poly)); // 필지 안 건물 + 장애물(벤츄레이터·옥탑 등)은 모두 비움
+  const holes=((b.kind==='bld'||b.whole)?[]:S.b.filter(x=>x!==b&&x.kind==='bld').map(x=>x.poly)).concat(S.obs.map(o=>o.poly)); // 필지 안 건물 + 장애물(벤츄레이터·옥탑 등)은 모두 비움. 「전체 지번」(whole)은 건물 자리도 비우지 않음
   const R=rule(b.type,b); if(b.kind==='strip'){ R.segs=null; R.margin=0; }
   if(b.marginUser!=null&&b.marginUser!=='') R.margin=+b.marginUser; // 항목별 경계 이격(토지 1~3m 등)
   if(R.cols) R.colPos=b.colPos||'auto';
@@ -153,7 +154,7 @@ function compute(b){
 function runAll(){ S.b.forEach(compute); redraw(); renderList(); totals(); if($('brAuto')?$('brAuto').checked:true) brAuto(); }
 function runAllKeep(){ S.b.forEach(compute); redraw(); totals();
   const wp=+$('wp').value; document.querySelectorAll('#blist .bld').forEach(card=>{ const b=S.b.find(x=>x.name===card.querySelector('.nm input').value); if(!b) return; const st=card.querySelector('.st');
-    st.innerHTML=`${b.kind==='parcel'?'필지 · ':b.kind==='draw'?'직접 · ':''}${b.mask?'<b style="color:#ff9500">범위 지정됨</b> · ':''}${Math.round(b.area).toLocaleString()} m² · ${b.checked?`<b>${b.mods.length}장 · ${(b.mods.length*wp/1000).toLocaleString(undefined,{maximumFractionDigits:2})} kW</b> · ${b.rows}열 · ${Math.round(b.az)}°`:'미선택'}`; });
+    st.innerHTML=`${kindLabel(b)}${b.mask?'<b style="color:#ff9500">범위 지정됨</b> · ':''}${Math.round(b.area).toLocaleString()} m² · ${b.checked?`<b>${b.mods.length}장 · ${(b.mods.length*wp/1000).toLocaleString(undefined,{maximumFractionDigits:2})} kW</b> · ${b.rows}열 · ${Math.round(b.az)}°`:'미선택'}`; });
 }
 let totals=function(){
   const wp=+$('wp').value, hrs=+$('hrs').value, price=+$('price').value, m=moduleDims();
@@ -209,7 +210,7 @@ function renderList(){
       ${b.kind==='strip'?'':`<div class="ty"><button class="rng" style="flex:1">${b.mask?'범위 다시 지정':'범위 지정 (일부만 설치)'}</button>${b.mask?'<button class="rngx">범위 해제</button>':''}</div>`}
       ${(b.type==='A'||b.type==='C')?`<div class="ty"><span>단 구성</span><input class="tiers" value="${b.tiers||''}" placeholder="자동 (예: 3,3 / 2,2 · 2,3,4 · 3,2,3,2)" title="남쪽 처마부터 단별 장수. '/' 뒤는 북쪽 처마부터. 비우면 자동" style="flex:1;min-width:0;padding:3px 6px;border:1px solid var(--line);border-radius:5px;font-size:12px"><input class="tgap" type="number" step="0.1" value="${b.tierGap??''}" placeholder="${b.type==='A'?'0.5':'3.2/2.2'}" title="단 사이 간격 m (비우면 기본)" style="width:52px;padding:3px 4px;border:1px solid var(--line);border-radius:5px;font-size:12px"><span>m</span></div>`:''}
       ${b.type==='E'?`<div class="ty"><span>기둥</span><select class="colp"><option value="auto" ${!b.colPos||b.colPos==='auto'?'selected':''}>자동 (1열 뒤쪽 · 2열 가운데)</option><option value="b" ${b.colPos==='b'?'selected':''}>뒤쪽</option><option value="f" ${b.colPos==='f'?'selected':''}>앞쪽</option><option value="c" ${b.colPos==='c'?'selected':''}>가운데</option></select><button class="colr" title="손으로 옮긴 기둥을 버리고 규칙대로 다시">${b.colsEdited?'자동 재배치':'재배치'}</button></div>`:''}
-      <div class="st">${b.kind==='parcel'?'필지 · ':b.kind==='draw'?'직접 · ':b.kind==='strip'?'주차열 띠 · ':''}${b.mask?'<b style="color:#ff9500">범위 지정됨</b> · ':''}${Math.round(b.area).toLocaleString()} m² · ${b.checked?`<b>${b.mods.length}장 · ${(b.mods.length*wp/1000).toLocaleString(undefined,{maximumFractionDigits:2})} kW</b> · ${b.rows}열 · ${Math.round(b.az)}°${b.type==='E'&&b.cols?` · 기둥 ${b.cols.length}개${b.colsEdited?'(수정됨)':''}`:''}${(b.type==='A'||b.type==='C')&&b.tiersUsed?` · 단 <b>${b.tiersUsed}</b>${b.tiers?'(지정)':'(자동)'}`:''}${b.type==='C'&&b.gapsUsed?` · ${b.gapsUsed}`:''}${b.type==='A'&&b.hmax?` · 최고 ${b.hmax.toFixed(2)}m`:''} · 이격 ${b.marginUsed??''}m`:'미선택'}${infoShort(b.info)}</div>${b.info?`<div class="ty" style="flex-wrap:wrap;font-size:11px;color:#66727f">${roadOf(b.info)}${jibunOf(b.info)?' · 지번 '+jibunOf(b.info):''}${pnuOf(b.info)?`<button class="brbtn" style="margin-left:auto;padding:2px 8px;font-size:11px">${b.br?'건축물대장 다시 조회':'건축물대장 조회 (높이·지붕)'}</button>`:''}</div>${brHtml(b)}<div class="ty">${infoHtml(b.info)}</div>`:''}`;
+      <div class="st">${kindLabel(b)}${b.mask?'<b style="color:#ff9500">범위 지정됨</b> · ':''}${Math.round(b.area).toLocaleString()} m² · ${b.checked?`<b>${b.mods.length}장 · ${(b.mods.length*wp/1000).toLocaleString(undefined,{maximumFractionDigits:2})} kW</b> · ${b.rows}열 · ${Math.round(b.az)}°${b.type==='E'&&b.cols?` · 기둥 ${b.cols.length}개${b.colsEdited?'(수정됨)':''}`:''}${(b.type==='A'||b.type==='C')&&b.tiersUsed?` · 단 <b>${b.tiersUsed}</b>${b.tiers?'(지정)':'(자동)'}`:''}${b.type==='C'&&b.gapsUsed?` · ${b.gapsUsed}`:''}${b.type==='A'&&b.hmax?` · 최고 ${b.hmax.toFixed(2)}m`:''} · 이격 ${b.marginUsed??''}m`:'미선택'}${infoShort(b.info)}</div>${b.info?`<div class="ty" style="flex-wrap:wrap;font-size:11px;color:#66727f">${roadOf(b.info)}${jibunOf(b.info)?' · 지번 '+jibunOf(b.info):''}${pnuOf(b.info)?`<button class="brbtn" style="margin-left:auto;padding:2px 8px;font-size:11px">${b.br?'건축물대장 다시 조회':'건축물대장 조회 (높이·지붕)'}</button>`:''}</div>${brHtml(b)}<div class="ty">${infoHtml(b.info)}</div>`:''}`;
     const brb=d.querySelector('.brbtn'); if(brb) brb.onclick=()=>{ b.br=null; brFetch(b); };
     const brs=d.querySelector('.brsel'); if(brs) brs.onchange=e=>{ b.brIdx=+e.target.value; renderList(); };
     const bra=d.querySelector('.brapply'); if(bra) bra.onclick=()=>{ b.type=bra.dataset.t; b.typeUser=true; runAll(); };
@@ -341,13 +342,26 @@ function onClick(lat,lng){
   if(S.mode==='obs'){ const h=num('obsSize',1.5)/2+num('obsGap',0.5); const poly=[[-h,-h],[h,-h],[h,h],[-h,h]].map(toLL); S.obs.push({id:Date.now()+Math.random(),poly}); runAll(); hint(`장애물 ${S.obs.length}개 — 계속 클릭해 추가 (크기·여유는 2번 아래 입력). 잘못 찍었으면 우클릭 삭제`); return; }
   if(S.mode==='col'){ const e=S.b.find(b=>b.type==='E'&&b.checked&&inside(pt,b.poly.map(toM))) || S.b.filter(b=>b.type==='E'&&b.checked).sort((a,b)=>Math.hypot(...toM(centroid(a.poly)))-Math.hypot(...toM(centroid(b.poly))))[0];
     if(!e){ msg('기둥을 넣을 주차장(E) 항목이 없습니다'); return; } e.cols=e.cols||[]; e.cols.push([lat,lng]); e.colsEdited=true; redraw(); renderList(); hint(`「${e.name}」 기둥 ${e.cols.length}개 — 계속 클릭해 추가, 끝나면 「클릭으로 체크/해제」`); return; }
-  const hit=S.b.find(b=>inside(pt,b.poly.map(toM)));
-  if(hit){ hit.checked=!hit.checked; runAll(); return; }
-  fetchBuilding(lat,lng,true);
+  // 선택 방식(S.sel)에 따라: 건물만 / 토지(건물 제외) / 전체 지번 / 주차장
+  const hits=S.b.filter(b=>inside(pt,b.poly.map(toM)));
+  const bldHit=hits.find(b=>b.kind==='bld'), areaHit=hits.find(b=>b.kind!=='bld');
+  if(S.sel==='bld'){
+    if(bldHit){ bldHit.checked=!bldHit.checked; runAll(); return; }
+    fetchBuilding(lat,lng,true,{bldOnly:true}); return;
+  }
+  const opts={whole:S.sel==='all', park:S.sel==='park'};
+  if(areaHit){ // 같은 자리의 필지가 이미 있으면 체크 토글, 방식이 다르면 그 방식으로 바꿔 줌
+    if(areaHit.kind==='parcel'){ const want=opts.park?'E':'C'; if(!!areaHit.whole!==opts.whole||(areaHit.type!==want&&!areaHit.typeUser)){ areaHit.whole=opts.whole; areaHit.type=want; areaHit.checked=true; runAll(); return; } }
+    areaHit.checked=!areaHit.checked; runAll(); return; }
+  fetchParcel(lat,lng,opts);
 }
-function setMode(m){ if(m!=='draw') S.maskFor=null; S.mode=m; ['mStrip:strip','mPick:pick','mDraw:draw','mCol:col','mErase:erase','mObs:obs','mObsDraw:obsDraw'].forEach(x=>{ const [id,md]=x.split(':'); if($(id)) $(id).classList.toggle('on',m===md); });
+const SEL_HINT={bld:'건물을 클릭하면 그 건물 지붕이 선택됩니다 (다시 클릭하면 해제). 멀리서 여러 동이면 「화면 안 건물 불러오기」 후 클릭',land:'땅을 클릭하면 그 지번 필지가 선택되고, 안에 있는 건물 자리는 비운 채 토지(C)로 배치합니다',all:'땅이나 건물을 클릭하면 그 지번 전체가 한 면으로 선택됩니다 (건물 자리도 비우지 않음)',park:'주차장 땅을 클릭하면 그 지번이 주차장 캐노피(E)로 선택됩니다. 필지와 모양이 다르면 「주차장 모양 그리기」'};
+function setSel(s){ S.sel=s; [['mBld','bld'],['mLand','land'],['mAll','all'],['mPark','park']].forEach(([id,k])=>{ if($(id)) $(id).classList.toggle('on',s===k); }); if($('selHelp')) $('selHelp').textContent=SEL_HINT[s]; }
+function setMode(m){ if(m!=='draw'){ S.maskFor=null; S.drawType=null; } S.mode=m; ['mStrip:strip','mCol:col','mErase:erase','mObs:obs','mObsDraw:obsDraw'].forEach(x=>{ const [id,md]=x.split(':'); if($(id)) $(id).classList.toggle('on',m===md); });
+  if($('mDraw')) $('mDraw').classList.toggle('on',m==='draw'&&S.drawType!=='E'); if($('mParkDraw')) $('mParkDraw').classList.toggle('on',m==='draw'&&S.drawType==='E');
+  document.querySelectorAll('.btns.sel button').forEach(b=>b.classList.toggle('dim',m!=='pick'));
   const dragOn=m!=='erase'; if(M.ready.v){ dragOn?M.v.dragging.enable():M.v.dragging.disable(); } if(M.ready.k) M.k.setDraggable(dragOn);
-  hint(m==='draw'?'면의 모서리를 차례로 클릭하세요':m==='col'?'주차장 캐노피 위를 클릭하면 기둥이 추가됩니다 (기존 기둥은 끌어서 이동, 우클릭 삭제)':m==='erase'?'모듈을 클릭하면 한 장 삭제, 드래그로 사각형을 그리면 안의 모듈 모두 삭제 (이 모드에선 지도 이동 안 됨 → 휠로 확대/축소)':m==='obs'?'벤츄레이터·옥탑·설비 자리를 클릭하면 네모 장애물이 생기고 그 자리는 비웁니다':m==='obsDraw'?'장애물 외곽을 차례로 클릭하고 「그리기 완료」':''); }
+  hint(m==='pick'?SEL_HINT[S.sel]:m==='draw'?(S.drawType==='E'?'주차장 외곽 모서리를 차례로 클릭하고 「그리기 완료」 — 주차장 캐노피(E)로 배치됩니다':'면의 모서리를 차례로 클릭하세요'):m==='col'?'주차장 캐노피 위를 클릭하면 기둥이 추가됩니다 (기존 기둥은 끌어서 이동, 우클릭 삭제)':m==='erase'?'모듈을 클릭하면 한 장 삭제, 드래그로 사각형을 그리면 안의 모듈 모두 삭제 (이 모드에선 지도 이동 안 됨 → 휠로 확대/축소)':m==='obs'?'벤츄레이터·옥탑·설비 자리를 클릭하면 네모 장애물이 생기고 그 자리는 비웁니다':m==='obsDraw'?'장애물 외곽을 차례로 클릭하고 「그리기 완료」':''); }
 
 /* ---------- 주차열 선 → 캐노피 띠 ---------- */
 function makeStrips(line){
@@ -384,11 +398,11 @@ function featToBuildings(features){
   });
   return added;
 }
-async function fetchBuilding(lat,lng,check){
+async function fetchBuilding(lat,lng,check,opts){
   hint('건물 조회 중…');
   try{ const d=await jsonp(VURL(`POINT(${lng} ${lat})`,5));
     const f=d?.response?.result?.featureCollection?.features;
-    if(!f||!f.length){ await fetchParcel(lat,lng); return; }
+    if(!f||!f.length){ if(opts&&opts.bldOnly){ msg('클릭한 자리에 건물이 없습니다 — 토지라면 「토지 선택」, 주차장이면 「주차장 선택」을 누르고 다시 클릭하세요'); hint(''); return; } await fetchParcel(lat,lng); return; }
     const before=S.b.length; featToBuildings([f[0]]);
     if(check){ if(S.b.length>before) S.b.slice(before).forEach(b=>b.checked=true);
       else { setOrigin(lat,lng); const hit=S.b.find(b=>inside([0,0],b.poly.map(toM))); if(hit) hit.checked=!hit.checked; } }
@@ -396,17 +410,22 @@ async function fetchBuilding(lat,lng,check){
   }catch(e){ msg('브이월드 조회 실패 — 키/서비스URL(localhost:8080) 확인'); hint(''); }
 }
 const PURL=(lat,lng)=>`https://api.vworld.kr/req/data?service=data&request=GetFeature&data=LP_PA_CBND_BUBUN&key=${K.vworld}&domain=${encodeURIComponent(K.domain)}&geomFilter=${encodeURIComponent(`POINT(${lng} ${lat})`)}&crs=EPSG:4326&format=json&size=3&geometry=true`;
-async function fetchParcel(lat,lng){
-  hint('필지(토지) 조회 중…');
+async function fetchParcel(lat,lng,opts){
+  opts=opts||{}; const park=!!opts.park, whole=!!opts.whole;
+  hint(park?'주차장 필지 조회 중…':whole?'지번(전체) 조회 중…':'필지(토지) 조회 중…');
   try{ const d=await jsonp(PURL(lat,lng)); const f=d?.response?.result?.featureCollection?.features;
-    if(!f||!f.length){ msg('건물도 필지도 찾지 못했습니다 — 「직접 그리기」로 면을 잡으세요'); hint(''); return; }
+    if(!f||!f.length){ msg('필지를 찾지 못했습니다 — 「직접 그리기」/「주차장 모양 그리기」로 면을 잡으세요'); hint(''); return; }
     const g=f[0].geometry, p=f[0].properties||{}; const ring=g.type==='Polygon'?g.coordinates[0]:g.coordinates[0][0];
     const poly=ring.map(c=>[c[1],c[0]]); if(poly.length>1&&poly[0][0]===poly[poly.length-1][0]&&poly[0][1]===poly[poly.length-1][1]) poly.pop();
-    const key='pnu:'+(p.pnu||poly[0].join(',')); const dup=S.b.find(b=>b.key===key); if(dup){ dup.checked=!dup.checked; runAll(); hint(''); return; }
-    const c=centroid(poly); setOrigin(c[0],c[1]); const dt=$('defType').value;
-    S.b.push({id:Date.now()+Math.random(),key,kind:'parcel',name:`토지 ${p.jibun||p.pnu||S.seq++}`,poly,checked:true,type:(dt==='C'||dt==='E')?dt:'C',mods:[],rows:0,az:0,area:area(poly.map(toM)),info:p});
-    try{ const lats=poly.map(q=>q[0]), lngs=poly.map(q=>q[1]); const d2=await jsonp(VURL(`BOX(${Math.min(...lngs)},${Math.min(...lats)},${Math.max(...lngs)},${Math.max(...lats)})`,200)); featToBuildings(d2?.response?.result?.featureCollection?.features||[]); }catch(e){}
-    msg(`필지 ${p.jibun||''} — 건물이 있는 자리는 비우고 배치합니다. 주차장이면 형태를 「E 주차장 캐노피」로 바꾸세요.`); hint(''); runAll();
+    const key='pnu:'+(p.pnu||poly[0].join(',')); const dup=S.b.find(b=>b.key===key);
+    if(dup){ const want=park?'E':'C'; if(!!dup.whole!==whole||dup.type!==want){ dup.whole=whole; dup.type=want; dup.checked=true; } else dup.checked=!dup.checked; runAll(); hint(''); return; }
+    const c=centroid(poly); setOrigin(c[0],c[1]);
+    const dt=$('defType').value; const type=park?'E':(whole?'C':((dt==='C')?dt:'C'));
+    S.b.push({id:Date.now()+Math.random(),key,kind:'parcel',whole,name:`${park?'주차장':whole?'지번':'토지'} ${p.jibun||p.pnu||S.seq++}`,poly,checked:true,type,mods:[],rows:0,az:0,area:area(poly.map(toM)),info:p});
+    if(!whole){ try{ const lats=poly.map(q=>q[0]), lngs=poly.map(q=>q[1]); const d2=await jsonp(VURL(`BOX(${Math.min(...lngs)},${Math.min(...lats)},${Math.max(...lngs)},${Math.max(...lats)})`,200)); featToBuildings(d2?.response?.result?.featureCollection?.features||[]); }catch(e){} }
+    msg(park?`주차장 필지 ${p.jibun||''} — 주차장 캐노피(E)로 배치합니다. 건물 자리는 비웁니다. 주차열 방향이 다르면 카드의 방향(°)을 돌리세요.`
+       :whole?`지번 ${p.jibun||''} 전체를 한 면으로 배치합니다 (건물 자리도 비우지 않음).`
+       :`토지 ${p.jibun||''} — 건물이 있는 자리는 비우고 토지(C)로 배치합니다.`); hint(''); runAll();
   }catch(e){ msg('브이월드 필지 조회 실패'); hint(''); }
 }
 async function loadBox(){
@@ -453,17 +472,19 @@ $('optSat').onclick=()=>{S.sat=!S.sat;applyMapOpts();}; $('optDist').onclick=()=
 
 /* ---------- 버튼 ---------- */
 $('loadBox').onclick=loadBox;
-$('mPick').onclick=()=>setMode('pick'); [['mCol','col'],['mErase','erase'],['mObs','obs'],['mObsDraw','obsDraw']].forEach(([id,md])=>{ if($(id)) $(id).onclick=()=>{ if(md==='obsDraw') S.draw=[]; setMode(S.mode===md?'pick':md); }; });
-if($('obsClear')) $('obsClear').onclick=()=>{ if(!S.obs.length) return; S.obs=[]; runAll(); }; $('mDraw').onclick=()=>setMode(S.mode==='draw'?'pick':'draw');
+[['mBld','bld'],['mLand','land'],['mAll','all'],['mPark','park']].forEach(([id,k])=>{ if($(id)) $(id).onclick=()=>{ setSel(k); setMode('pick'); }; }); setSel(S.sel);
+[['mCol','col'],['mErase','erase'],['mObs','obs'],['mObsDraw','obsDraw']].forEach(([id,md])=>{ if($(id)) $(id).onclick=()=>{ if(md==='obsDraw') S.draw=[]; setMode(S.mode===md?'pick':md); }; });
+if($('obsClear')) $('obsClear').onclick=()=>{ if(!S.obs.length) return; S.obs=[]; runAll(); }; $('mDraw').onclick=()=>{ const off=S.mode==='draw'&&S.drawType!=='E'; S.draw=[]; S.drawType=null; setMode(off?'pick':'draw'); };
+if($('mParkDraw')) $('mParkDraw').onclick=()=>{ const off=S.mode==='draw'&&S.drawType==='E'; S.draw=[]; if(off){ setMode('pick'); return; } S.mode='draw'; S.drawType='E'; setMode('draw'); };
 $('undo').onclick=()=>{ S.draw.pop(); redraw(); };
-$('mStrip').onclick=()=>{ if(S.mode==='strip'){ setMode('pick'); return; } S.mode='strip'; S.draw=[]; $('mStrip').classList.add('on'); $('mDraw').classList.remove('on'); $('mPick').classList.remove('on'); hint('주차열(주차선) 중심을 따라 점을 찍고 「그리기 완료」 — 깊이·좌우 치우침은 4번 규칙의 주차열 값'); };
+$('mStrip').onclick=()=>{ if(S.mode==='strip'){ setMode('pick'); return; } S.mode='strip'; S.draw=[]; setMode('strip'); hint('주차열(주차선) 중심을 따라 점을 찍고 「그리기 완료」 — 깊이·좌우 치우침은 4번 규칙의 주차열 값'); };
 $('finish').onclick=()=>{
   if(S.mode==='strip'){ if(S.draw.length<2){msg('2점 이상 찍어야 합니다');return;} makeStrips(S.draw.slice()); S.draw=[]; setMode('pick'); runAll(); return; }
   if(S.draw.length<3){msg('3점 이상 찍어야 합니다');return;}
   if(S.mode==='obsDraw'){ S.obs.push({id:Date.now()+Math.random(),poly:S.draw.slice()}); S.draw=[]; setMode('pick'); runAll(); return; }
   if(S.maskFor){ const b=S.b.find(x=>x.id===S.maskFor); if(b){ b.mask=S.draw.slice(); b.checked=true; } S.maskFor=null; S.draw=[]; setMode('pick'); runAll(); return; }
   const poly=S.draw.slice(); const c=centroid(poly); setOrigin(c[0],c[1]);
-  S.b.push({id:Date.now(),key:'draw'+S.seq,kind:'draw',name:`면${S.seq++}`,poly,checked:true,type:$('defType').value,mods:[],rows:0,az:0,area:area(poly.map(toM))}); S.draw=[]; setMode('pick'); runAll(); };
+  const dType=S.drawType||$('defType').value; S.b.push({id:Date.now(),key:'draw'+S.seq,kind:'draw',name:`${dType==='E'?'주차장':'면'}${S.seq++}`,poly,checked:true,type:dType,typeUser:S.drawType?true:undefined,mods:[],rows:0,az:0,area:area(poly.map(toM))}); S.draw=[]; setMode('pick'); runAll(); };
 $('clearAll').onclick=()=>{ if(S.b.length&&!confirm('모든 건물·배치를 지울까요?'))return; S.b=[]; S.obs=[]; S.draw=[]; S.seq=1; runAll(); };
 $('run').onclick=runAll;
 $('modPreset').onchange=e=>{ if(e.target.value==='custom')return; const [w,a,b]=e.target.value.split(','); $('wp').value=w;$('mw').value=a;$('mh').value=b; runAll(); };

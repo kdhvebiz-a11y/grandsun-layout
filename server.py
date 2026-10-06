@@ -28,7 +28,8 @@ class H(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=ROOT, **kw)
     def log_message(self, fmt, *args):
-        if '/api/' in (args[0] if args else ''):
+        a0 = args[0] if args else ''
+        if isinstance(a0, str) and '/api/' in a0:  # 404 등 오류 로그는 args[0] 가 HTTPStatus 라 문자열 검사만
             super().log_message(fmt, *args)
     def send_json(self, code, obj):
         body = json.dumps(obj, ensure_ascii=False).encode('utf-8')

@@ -27,6 +27,7 @@ button{padding:6px 9px;border:1px solid var(--line);border-radius:6px;background
 button.pri{background:var(--acc);color:#fff;border-color:var(--acc)}
 button.on{background:var(--acc2);border-color:var(--acc);color:var(--acc)}
 .btns{display:flex;flex-wrap:wrap;gap:6px}.btns button{flex:1 1 auto}
+.btns.sel{display:grid;grid-template-columns:1fr 1fr}.btns.sel button{text-align:left;padding:8px 9px}.btns.sel button.on{box-shadow:inset 0 0 0 2px var(--acc)}.btns.sel button.dim{opacity:.45}
 .search{display:flex;gap:6px}.search input{flex:1;padding:6px 8px;border:1px solid var(--line);border-radius:6px}
 #msg{font-size:12px;color:var(--warn);min-height:16px}
 #mapwrap{position:relative;min-width:0;overflow:hidden}
@@ -129,12 +130,21 @@ table.qt tfoot td{font-weight:700}table.qt tr.tot td{font-size:15px;border-top:2
   <fieldset><legend>2. 건물·토지 선택</legend>
     <div class="btns">
       <button id="loadBox" class="pri">화면 안 건물 불러오기</button>
-      <button id="mPick" class="on">클릭으로 체크/해제</button>
-      <button id="mDraw">토지·면 직접 그리기</button>
+    </div>
+    <div class="tiny" style="margin:6px 0 2px;font-weight:700;color:#444">무엇을 선택할까요? (지도 클릭)</div>
+    <div class="btns sel">
+      <button id="mBld" class="on" title="건물 지붕만 선택합니다 (브이월드 건물 외곽)">🏢 건물만 선택</button>
+      <button id="mLand" title="필지 전체 중 건물 자리를 뺀 땅에 배치합니다 (토지 C)">🌾 토지 선택 (건물 제외)</button>
+      <button id="mAll" title="필지 전체를 한 면으로 — 건물 자리도 비우지 않습니다">⬛ 전체 지번 선택</button>
+      <button id="mPark" title="필지를 주차장 캐노피(E)로 선택합니다">🅿 주차장 선택 (지번)</button>
+    </div>
+    <div class="btns" style="margin-top:6px">
+      <button id="mDraw">✏ 토지·면 직접 그리기</button>
+      <button id="mParkDraw">✏ 주차장 모양 그리기</button>
       <button id="mStrip">주차열 선 따라 캐노피</button>
     </div>
     <div class="btns" style="margin-top:6px"><button id="undo">한 점 되돌리기</button><button id="finish">그리기 완료</button><button id="clearAll">전체 지우기</button></div>
-    <div class="tiny" style="margin-top:4px">건물을 클릭하면 건물, <b>빈 땅·주차장을 클릭하면 그 필지</b>가 선택됩니다(건물 자리는 자동으로 비움). 둘 다 없으면 「직접 그리기」. 지도는 줌 13 이상에서 건물이 조회됩니다.</div>
+    <div class="tiny" id="selHelp" style="margin-top:4px">선택 방식을 고른 뒤 지도를 클릭하세요. 이미 선택된 항목을 다시 클릭하면 체크가 풀립니다. 지도는 줌 13 이상에서 건물이 조회됩니다.</div>
     <details style="margin-top:6px"><summary style="cursor:pointer;font-size:12px;font-weight:700;color:#1f4fd1">✎ 배치 손보기 — 모듈 지우기 · 장애물 · 주차장 기둥</summary>
       <div class="btns" style="margin-top:6px">
         <button id="mErase" style="color:#d1242f">모듈 지우기 (클릭·드래그)</button>
