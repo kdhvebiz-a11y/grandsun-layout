@@ -94,7 +94,7 @@ function rule(type,b){
 }
 
 /* ---------- 배치 엔진 ---------- */
-function layout(poly, R, holes, mask, azUser){
+function layout(poly, R, holes, mask, azUser, shift, off0){
   const c=centroid(poly); setOrigin(c[0],c[1]);
   const pg=poly.map(toM);
   const hs=(holes||[]).map(h=>h.map(toM)); const mk=mask?mask.map(toM):null;
@@ -103,7 +103,9 @@ function layout(poly, R, holes, mask, azUser){
   const rot=p=>[p[0]*cs+p[1]*sn, -p[0]*sn+p[1]*cs], un=p=>[p[0]*cs-p[1]*sn, p[0]*sn+p[1]*cs];
   const pr=pg.map(rot); const hr=hs.map(h=>h.map(rot)); const mr=mk?mk.map(rot):null;
   const us=pr.map(p=>p[0]), vs=pr.map(p=>p[1]);
-  const u0=Math.min(...us),u1=Math.max(...us),v0=Math.min(...vs),v1=Math.max(...vs);
+  // 덩어리 이동(shift: 동쪽·북쪽 m) → 격자 기준틀만 옮기고 외곽선 판정은 그대로 (모듈 묶음이 통째로 이동)
+  const sh=shift&&(shift[0]||shift[1])?rot([shift[0],shift[1]]):[0,0];
+  const u0=Math.min(...us)+sh[0],u1=Math.max(...us)+sh[0],v0=Math.min(...vs)+sh[1],v1=Math.max(...vs)+sh[1];
   const pu=R.w+R.cgap, pv=R.d+R.rgap;
   const ok=q=>q.every(p=>(inside(p,pr)||dEdge(p,pr)<=0.02)&&dEdge(p,pr)>=R.margin-1e-6) && (!mr||q.every(p=>inside(p,mr))) && !hr.some(h=>q.some(p=>inside(p,h)) || inside(h[0],q));
   // u 구간: 패턴(남쪽 처마 기준) 또는 전체
@@ -111,10 +113,10 @@ function layout(poly, R, holes, mask, azUser){
   if(R.segs){ const rel=R.segs(u1-u0); segs = rel.map(([a0,a1])=> (R.southRef&&uSouthAtU1) ? [u1-a1,u1-a0] : [u0+a0,u0+a1]); }
   else segs=[[u0,u1]];
   const vmid=(v0+v1)/2;
-  let best={mods:[],rows:0};
-  const NU=R.segs?1:4, NV=4;
+  let best={mods:[],rows:0,off:[0,0]};
+  const fixed=!!(shift&&(shift[0]||shift[1])); const NU=fixed?1:(R.segs?1:4), NV=fixed?1:4; // 손으로 옮긴 뒤엔 자동 최적 오프셋 탐색 안 함(움직임이 예측 가능하게)
   for(let i=0;i<NU;i++) for(let j=0;j<NV;j++){
-    const ou=pu*i/NU, ov=pv*j/NV, mods=[]; let rows=0, v=v0+ov, k=0, bandStart=v, nInRow=0, crossed=false;
+    const ou=fixed?((off0&&off0[0])||0):pu*i/NU, ov=fixed?((off0&&off0[1])||0):pv*j/NV, mods=[]; let rows=0, v=v0+ov, k=0, bandStart=v, nInRow=0, crossed=false;
     while(v+R.d<=v1){
       if(R.vSplitGap&&!crossed&&v+R.d>vmid-R.vSplitGap/2&&v<vmid+R.vSplitGap/2){ v=vmid+R.vSplitGap/2; crossed=true; bandStart=v; k=0; continue; }
       let any=false;
@@ -124,7 +126,7 @@ function layout(poly, R, holes, mask, azUser){
       if(R.rowsPerBand){ if(k%R.rowsPerBand===0){ v=bandStart+R.bandPitch; bandStart=v; } else v+=pv; }
       else { v+=pv; if(R.walkEvery&&nInRow%R.walkEvery===0) v+=R.walkGap; }
     }
-    if(mods.length>best.mods.length) best={mods,rows};
+    if(mods.length>best.mods.length||(fixed&&i===0&&j===0)) best={mods,rows,off:[ou,ov]};
   }
   // 주차장 기둥 자동 배치: 구간(주차열)별 모듈 범위를 잡고, 열 방향으로 colPitch(5m=2칸)마다 1개. 1열은 뒤쪽(a0쪽)·등맞댐 2열은 가운데(600 틈)
   const cols=[];
@@ -134,7 +136,7 @@ function layout(poly, R, holes, mask, azUser){
       const u= pos==='c'?(umin+umax)/2 : pos==='b'? umin+0.3 : umax-0.3;
       const vs=[]; for(let v=vmin; v<=vmax+1e-6; v+=R.colPitch) vs.push(v); if(vmax-vs[vs.length-1]>R.colPitch/2) vs.push(vmax); else vs[vs.length-1]=vmax;
       vs.forEach(v=>cols.push([u,v])); }); }
-  return {mods:best.mods.map(q=>q.map(p=>toLL(un(p)))), cols:cols.map(p=>toLL(un(p))), rows:best.rows, area:area(pg), az:((az%180)+180)%180};
+  return {mods:best.mods.map(q=>q.map(p=>toLL(un(p)))), cols:cols.map(p=>toLL(un(p))), rows:best.rows, area:area(pg), az:((az%180)+180)%180, off:best.off};
 }
 
 const modCenter=q=>[(q[0][0]+q[2][0])/2,(q[0][1]+q[2][1])/2];
@@ -146,7 +148,7 @@ function compute(b){
   const R=rule(b.type,b); if(b.kind==='strip'){ R.segs=null; R.margin=0; }
   if(b.marginUser!=null&&b.marginUser!=='') R.margin=+b.marginUser; // 항목별 경계 이격(토지 1~3m 등)
   if(R.cols) R.colPos=b.colPos||'auto';
-  const r=layout(b.poly, R, holes, b.mask, b.azUser);
+  const r=layout(b.poly, R, holes, b.mask, b.azUser, b.shift, b.off0); b.lastOff=r.off;
   b.tiersUsed=R._tiers||''; b.gapsUsed=R._gaps||''; b.hmax=R._hmax||0; b.rows=r.rows; b.area=r.area; b.az=r.az; b.marginUsed=R.margin;
   b.mods=(b.erased&&b.erased.length)? r.mods.filter(q=>!b.erased.some(e=>nearLL(e,modCenter(q),0.45))) : r.mods; // 손으로 지운 모듈은 다시 안 깔림
   if(!b.colsEdited) b.cols=r.cols; if(b.type!=='E') b.cols=[];
@@ -202,8 +204,9 @@ function renderList(){
   S.b.slice().sort((a,b)=>(b.checked-a.checked)).forEach(b=>{
     const d=document.createElement('div'); d.className='bld'+(b.checked?' sel':'');
     d.innerHTML=`<input type="checkbox" ${b.checked?'checked':''}><div class="nm"><input value="${b.name}" title="이름 수정"></div><button class="del" title="목록에서 제거">✕</button>
-      <div class="ty"><span>형태</span><select>${Object.entries(TYPE_NM).map(([k,v])=>`<option value="${k}" ${b.type===k?'selected':''}>${v}</option>`).join('')}</select></div>
+      <div class="ty"><span>형태</span><span class="tpic" title="${TYPE_SHORT[b.type]||''}">${TYPE_SVG[b.type]||''}</span><select>${Object.entries(TYPE_NM).map(([k,v])=>`<option value="${k}" ${b.type===k?'selected':''}>${v}</option>`).join('')}</select></div>
       <div class="ty"><span>방향</span><input type="range" class="azr" min="0" max="179" step="1" value="${Math.round(b.az||0)}"><input type="number" class="azn" min="0" max="179" step="1" value="${Math.round(b.az||0)}" style="width:48px;padding:3px 4px;border:1px solid var(--line);border-radius:5px;font-size:12px"><span>°</span><button class="azm" title="1° 반시계" style="padding:3px 6px;font-size:11px">−1</button><button class="azp" title="1° 시계" style="padding:3px 6px;font-size:11px">+1</button><button class="aza" title="최장변 방향으로 자동" style="padding:3px 6px;font-size:11px;${b.azUser==null?'background:#e8f0fe;border-color:#1f6feb;color:#1f6feb':''}">자동</button></div>
+      <div class="ty"><span>위치 이동</span><button class="sh" data-d="-0.1,0" title="서쪽으로 0.1m" style="padding:3px 7px;font-size:11px">←</button><button class="sh" data-d="0.1,0" title="동쪽으로 0.1m" style="padding:3px 7px;font-size:11px">→</button><button class="sh" data-d="0,0.1" title="북쪽으로 0.1m" style="padding:3px 7px;font-size:11px">↑</button><button class="sh" data-d="0,-0.1" title="남쪽으로 0.1m" style="padding:3px 7px;font-size:11px">↓</button><span class="tiny">${b.shift?`동 ${b.shift[0].toFixed(2)} · 북 ${b.shift[1].toFixed(2)}m`:'0'}</span>${b.shift?`<button class="sh0" style="padding:3px 6px;font-size:11px">원위치</button>`:''}<span class="tiny" style="margin-left:auto">지도에서 끌기: 「덩어리 옮기기」</span></div>
       <div class="ty"><span>경계 이격</span><input class="mrg" type="number" step="0.5" min="0" value="${b.marginUser??''}" placeholder="${b.kind==='strip'?'0':(b.type==='A'?'0.5':b.type==='D'||b.type==='F'?'0.7':$('margin').value)}" title="이 항목만 가장자리에서 띄우는 거리(m). 토지는 지번 경계에서 1~3m 권장. 비우면 형태별 기본" style="width:60px;padding:3px 4px;border:1px solid var(--line);border-radius:5px;font-size:12px"><span>m</span>${b.kind==='parcel'||b.kind==='draw'?`<button class="mq" data-v="1" style="padding:3px 6px;font-size:11px">1</button><button class="mq" data-v="2" style="padding:3px 6px;font-size:11px">2</button><button class="mq" data-v="3" style="padding:3px 6px;font-size:11px">3</button>`:''}${b.erased&&b.erased.length?`<button class="rst" style="margin-left:auto;padding:3px 6px;font-size:11px;color:#d1242f">지운 ${b.erased.length}장 복원</button>`:''}</div>
       ${b.type==='A'?`<div class="ty"><span>지붕</span><select class="rk" style="flex:1"><option value="gable" ${!b.roofKind||b.roofKind==='gable'?'selected':''}>박공 (남·북 양면)</option><option value="south" ${b.roofKind==='south'?'selected':''}>단일경사 남향</option><option value="north" ${b.roofKind==='north'?'selected':''}>단일경사 북향</option><option value="flat" ${b.roofKind==='flat'?'selected':''}>평지붕</option></select><input class="rs" type="number" step="1" value="${b.roofSlope??''}" placeholder="${$('roofSlope')?$('roofSlope').value:10}" title="지붕 경사각 °" style="width:46px;padding:3px 4px;border:1px solid var(--line);border-radius:5px;font-size:12px"><span>°</span></div>`:''}
       ${b.type==='C'?`<div class="ty"><span>단수</span><select class="tc" style="flex:1"><option value="auto" ${!b.tiersC||b.tiersC==='auto'?'selected':''}>자동 (3단 우선, 남는 폭 2단)</option><option value="2" ${b.tiersC==='2'?'selected':''}>2단</option><option value="3" ${b.tiersC==='3'?'selected':''}>3단</option><option value="4" ${b.tiersC==='4'?'selected':''}>4단</option></select></div>`:''}
@@ -214,6 +217,7 @@ function renderList(){
     const brb=d.querySelector('.brbtn'); if(brb) brb.onclick=()=>{ b.br=null; brFetch(b); };
     const brs=d.querySelector('.brsel'); if(brs) brs.onchange=e=>{ b.brIdx=+e.target.value; renderList(); };
     const bra=d.querySelector('.brapply'); if(bra) bra.onclick=()=>{ b.type=bra.dataset.t; b.typeUser=true; runAll(); };
+    d.querySelectorAll('.sh').forEach(x=>x.onclick=()=>{ const [dE,dN]=x.dataset.d.split(',').map(Number); applyShift(b,dE,dN); }); const sh0=d.querySelector('.sh0'); if(sh0) sh0.onclick=()=>{ b.shift=null; b.off0=null; runAll(); };
     d.querySelector('.azm').onclick=()=>{ b.azUser=(((b.azUser??b.az)-1)%180+180)%180; runAll(); }; d.querySelector('.azp').onclick=()=>{ b.azUser=(((b.azUser??b.az)+1)%180+180)%180; runAll(); };
     const mrg=d.querySelector('.mrg'); mrg.onchange=e=>{ b.marginUser=e.target.value===''?null:+e.target.value; runAll(); }; d.querySelectorAll('.mq').forEach(x=>x.onclick=()=>{ b.marginUser=+x.dataset.v; runAll(); });
     const rst=d.querySelector('.rst'); if(rst) rst.onclick=()=>{ b.erased=[]; runAll(); };
@@ -308,7 +312,24 @@ let eDrag=null, eMoved=false;
 function eraseRect(a,b){ const la0=Math.min(a[0],b[0]),la1=Math.max(a[0],b[0]),lo0=Math.min(a[1],b[1]),lo1=Math.max(a[1],b[1]); let n=0;
   S.b.forEach(x=>{ if(!x.checked) return; x.erased=x.erased||[]; x.mods=x.mods.filter(q=>{ const c=modCenter(q); if(c[0]>=la0&&c[0]<=la1&&c[1]>=lo0&&c[1]<=lo1){ x.erased.push(c); n++; return false; } return true; }); });
   redraw(); renderList(); totals(); msg(n?`모듈 ${n}장을 지웠습니다 (카드의 「복원」으로 되돌림)`:'사각형 안에 모듈이 없습니다'); }
+let mDrag=null, mMoved=false;
+const dLL2m=(a,b)=>[(b[1]-a[1])*111320*Math.cos(a[0]*Math.PI/180),(b[0]-a[0])*110574]; // a→b 를 동쪽·북쪽 m 로
+const shiftLL=(poly,dE,dN)=>poly.map(p=>[p[0]+dN/110574,p[1]+dE/(111320*Math.cos(p[0]*Math.PI/180))]);
+function hitItem(lat,lng){ setOrigin(lat,lng); return S.b.filter(b=>b.checked&&inside([0,0],b.poly.map(toM))).sort((a,b)=>a.area-b.area)[0]; } // 가장 작은(안쪽) 항목
+function applyShift(b,dE,dN){ if(!b.off0) b.off0=b.lastOff||[0,0]; b.shift=[(b.shift?b.shift[0]:0)+dE,(b.shift?b.shift[1]:0)+dN]; if(Math.abs(b.shift[0])<0.005&&Math.abs(b.shift[1])<0.005){ b.shift=null; b.off0=null; } compute(b); redraw(); renderList(); totals(); }
 function setupErase(which){
+  if(which==='v'&&M.ready.v){ const m=M.v;
+    m.on('mousedown',e=>{ if(S.mode!=='move') return; const b=hitItem(e.latlng.lat,e.latlng.lng); if(!b){ return; } mDrag={b,a:[e.latlng.lat,e.latlng.lng],ghost:null}; mMoved=false; });
+    m.on('mousemove',e=>{ if(!mDrag||S.mode!=='move') return; mMoved=true; const [dE,dN]=dLL2m(mDrag.a,[e.latlng.lat,e.latlng.lng]); if(mDrag.ghost) m.removeLayer(mDrag.ghost);
+      mDrag.ghost=L.polygon(shiftLL(mDrag.b.poly,dE,dN),{color:'#1f6feb',weight:2,dashArray:'6 4',fillOpacity:.08}).addTo(m); hint(`「${mDrag.b.name}」 이동 중: 동 ${dE.toFixed(2)}m · 북 ${dN.toFixed(2)}m — 놓으면 모듈이 그만큼 옮겨집니다`); });
+    m.on('mouseup',e=>{ if(!mDrag||S.mode!=='move') return; if(mDrag.ghost) m.removeLayer(mDrag.ghost); const d=mDrag; mDrag=null; if(mMoved){ const [dE,dN]=dLL2m(d.a,[e.latlng.lat,e.latlng.lng]); applyShift(d.b,dE,dN); hint(MODE_HINT.move); } });
+  }
+  if(which==='k'&&M.ready.k){ const m=M.k; let ghost=null;
+    kakao.maps.event.addListener(m,'mousedown',e=>{ if(S.mode!=='move') return; const b=hitItem(e.latLng.getLat(),e.latLng.getLng()); if(!b) return; mDrag={b,a:[e.latLng.getLat(),e.latLng.getLng()]}; mMoved=false; });
+    kakao.maps.event.addListener(m,'mousemove',e=>{ if(!mDrag||S.mode!=='move') return; mMoved=true; const [dE,dN]=dLL2m(mDrag.a,[e.latLng.getLat(),e.latLng.getLng()]); if(ghost) ghost.setMap(null);
+      ghost=new kakao.maps.Polygon({path:shiftLL(mDrag.b.poly,dE,dN).map(p=>new kakao.maps.LatLng(p[0],p[1])),strokeColor:'#1f6feb',strokeWeight:2,strokeStyle:'dash',fillColor:'#1f6feb',fillOpacity:.08}); ghost.setMap(m); hint(`「${mDrag.b.name}」 이동 중: 동 ${dE.toFixed(2)}m · 북 ${dN.toFixed(2)}m`); });
+    kakao.maps.event.addListener(m,'mouseup',e=>{ if(!mDrag||S.mode!=='move') return; if(ghost){ ghost.setMap(null); ghost=null; } const d=mDrag; mDrag=null; if(mMoved){ const [dE,dN]=dLL2m(d.a,[e.latLng.getLat(),e.latLng.getLng()]); applyShift(d.b,dE,dN); hint(MODE_HINT.move); } });
+  }
   if(which==='v'&&M.ready.v){ const m=M.v;
     m.on('mousedown',e=>{ if(S.mode!=='erase') return; eDrag={a:[e.latlng.lat,e.latlng.lng],rect:null}; eMoved=false; });
     m.on('mousemove',e=>{ if(!eDrag||S.mode!=='erase') return; eMoved=true; if(eDrag.rect) m.removeLayer(eDrag.rect); eDrag.rect=L.rectangle([eDrag.a,[e.latlng.lat,e.latlng.lng]],{color:'#d1242f',weight:1,dashArray:'4 3',fillOpacity:.12}).addTo(m); });
@@ -338,6 +359,8 @@ function onClick(lat,lng){
   if(S.mode==='draw'||S.mode==='obsDraw'){ S.draw.push([lat,lng]); redraw(); hint(`${S.draw.length}점 — 계속 찍고, 끝나면 「그리기 완료」`); return; }
   // 이미 불러온 건물 위인가?
   setOrigin(lat,lng); const pt=[0,0];
+  if(S.mode==='move'){ if(mMoved){ mMoved=false; return; } const b=hitItem(lat,lng); if(!b) msg('옮길 항목(체크된 건물·토지) 위에서 드래그하세요'); else hint(`「${b.name}」 위에서 마우스를 누른 채 끌어서 옮기세요 (현재 이동 ${b.shift?`동 ${b.shift[0].toFixed(2)}m · 북 ${b.shift[1].toFixed(2)}m`:'없음'})`); return; }
+  if(S.shiftKey&&S.mode==='pick'){ const h=num('obsSize',1.5)/2+num('obsGap',0.5); const poly=[[-h,-h],[h,-h],[h,h],[-h,h]].map(toLL); S.obs.push({id:Date.now()+Math.random(),poly}); runAll(); msg(`장애물 ${S.obs.length}개 (Shift+클릭) — 그 자리는 비우고 다시 배치했습니다. 우클릭으로 삭제`); return; }
   if(S.mode==='erase'){ if(eMoved){ eMoved=false; return; } for(const b of S.b){ if(!b.checked) continue; const i=b.mods.findIndex(q=>inside(pt,q.map(toM))); if(i>=0){ b.erased=b.erased||[]; b.erased.push(modCenter(b.mods[i])); b.mods.splice(i,1); redraw(); renderList(); totals(); return; } } msg('클릭한 자리에 모듈이 없습니다 (드래그로 여러 장 선택 가능)'); return; }
   if(S.mode==='obs'){ const h=num('obsSize',1.5)/2+num('obsGap',0.5); const poly=[[-h,-h],[h,-h],[h,h],[-h,h]].map(toLL); S.obs.push({id:Date.now()+Math.random(),poly}); runAll(); hint(`장애물 ${S.obs.length}개 — 계속 클릭해 추가 (크기·여유는 2번 아래 입력). 잘못 찍었으면 우클릭 삭제`); return; }
   if(S.mode==='col'){ const e=S.b.find(b=>b.type==='E'&&b.checked&&inside(pt,b.poly.map(toM))) || S.b.filter(b=>b.type==='E'&&b.checked).sort((a,b)=>Math.hypot(...toM(centroid(a.poly)))-Math.hypot(...toM(centroid(b.poly))))[0];
@@ -355,13 +378,14 @@ function onClick(lat,lng){
     areaHit.checked=!areaHit.checked; runAll(); return; }
   fetchParcel(lat,lng,opts);
 }
+const MODE_HINT={move:'옮길 건물·토지 위에서 마우스를 누른 채 끌면 모듈 묶음이 통째로 이동합니다 (이 모드에선 지도 이동 안 됨 → 휠로 확대/축소). 미세 조정은 카드의 ← → ↑ ↓ 버튼(0.1m)'};
 const SEL_HINT={bld:'건물을 클릭하면 그 건물 지붕이 선택됩니다 (다시 클릭하면 해제). 멀리서 여러 동이면 「화면 안 건물 불러오기」 후 클릭',land:'땅을 클릭하면 그 지번 필지가 선택되고, 안에 있는 건물 자리는 비운 채 토지(C)로 배치합니다',all:'땅이나 건물을 클릭하면 그 지번 전체가 한 면으로 선택됩니다 (건물 자리도 비우지 않음)',park:'주차장 땅을 클릭하면 그 지번이 주차장 캐노피(E)로 선택됩니다. 필지와 모양이 다르면 「주차장 모양 그리기」'};
 function setSel(s){ S.sel=s; [['mBld','bld'],['mLand','land'],['mAll','all'],['mPark','park']].forEach(([id,k])=>{ if($(id)) $(id).classList.toggle('on',s===k); }); if($('selHelp')) $('selHelp').textContent=SEL_HINT[s]; }
-function setMode(m){ if(m!=='draw'){ S.maskFor=null; S.drawType=null; } S.mode=m; ['mStrip:strip','mCol:col','mErase:erase','mObs:obs','mObsDraw:obsDraw'].forEach(x=>{ const [id,md]=x.split(':'); if($(id)) $(id).classList.toggle('on',m===md); });
+function setMode(m){ if(m!=='draw'){ S.maskFor=null; S.drawType=null; } S.mode=m; ['mStrip:strip','mCol:col','mErase:erase','mObs:obs','mObsDraw:obsDraw','mMove:move'].forEach(x=>{ const [id,md]=x.split(':'); if($(id)) $(id).classList.toggle('on',m===md); });
   if($('mDraw')) $('mDraw').classList.toggle('on',m==='draw'&&S.drawType!=='E'); if($('mParkDraw')) $('mParkDraw').classList.toggle('on',m==='draw'&&S.drawType==='E');
   document.querySelectorAll('.btns.sel button').forEach(b=>b.classList.toggle('dim',m!=='pick'));
-  const dragOn=m!=='erase'; if(M.ready.v){ dragOn?M.v.dragging.enable():M.v.dragging.disable(); } if(M.ready.k) M.k.setDraggable(dragOn);
-  hint(m==='pick'?SEL_HINT[S.sel]:m==='draw'?(S.drawType==='E'?'주차장 외곽 모서리를 차례로 클릭하고 「그리기 완료」 — 주차장 캐노피(E)로 배치됩니다':'면의 모서리를 차례로 클릭하세요'):m==='col'?'주차장 캐노피 위를 클릭하면 기둥이 추가됩니다 (기존 기둥은 끌어서 이동, 우클릭 삭제)':m==='erase'?'모듈을 클릭하면 한 장 삭제, 드래그로 사각형을 그리면 안의 모듈 모두 삭제 (이 모드에선 지도 이동 안 됨 → 휠로 확대/축소)':m==='obs'?'벤츄레이터·옥탑·설비 자리를 클릭하면 네모 장애물이 생기고 그 자리는 비웁니다':m==='obsDraw'?'장애물 외곽을 차례로 클릭하고 「그리기 완료」':''); }
+  const dragOn=m!=='erase'&&m!=='move'; if(M.ready.v){ dragOn?M.v.dragging.enable():M.v.dragging.disable(); } if(M.ready.k) M.k.setDraggable(dragOn);
+  hint(m==='move'?MODE_HINT.move:m==='pick'?SEL_HINT[S.sel]:m==='draw'?(S.drawType==='E'?'주차장 외곽 모서리를 차례로 클릭하고 「그리기 완료」 — 주차장 캐노피(E)로 배치됩니다':'면의 모서리를 차례로 클릭하세요'):m==='col'?'주차장 캐노피 위를 클릭하면 기둥이 추가됩니다 (기존 기둥은 끌어서 이동, 우클릭 삭제)':m==='erase'?'모듈을 클릭하면 한 장 삭제, 드래그로 사각형을 그리면 안의 모듈 모두 삭제 (이 모드에선 지도 이동 안 됨 → 휠로 확대/축소)':m==='obs'?'벤츄레이터·옥탑·설비 자리를 클릭하면 네모 장애물이 생기고 그 자리는 비웁니다':m==='obsDraw'?'장애물 외곽을 차례로 클릭하고 「그리기 완료」':''); }
 
 /* ---------- 주차열 선 → 캐노피 띠 ---------- */
 function makeStrips(line){
@@ -468,12 +492,56 @@ function syncTo(t){
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{ S.active=b.dataset.m;
   document.querySelectorAll('#tabs button').forEach(x=>x.classList.toggle('on',x===b));
   document.querySelectorAll('.map').forEach(x=>x.classList.remove('on')); $({k:'mapK',v:'mapV',g:'mapG'}[S.active]).classList.add('on'); syncTo(S.active); });
+/* ---------- 로드뷰 (카카오) : 지붕 구조물 육안 확인용 ---------- */
+function curCenter(){ try{ if(S.active==='v'&&M.ready.v){ const c=M.v.getCenter(); return [c.lat,c.lng]; } if(S.active==='k'&&M.ready.k){ const c=M.k.getCenter(); return [c.getLat(),c.getLng()]; } if(S.active==='g'&&M.ready.g){ const c=M.g.getCenter(); return [c.lat(),c.lng()]; } }catch(e){} return S.center; }
+let RV=null;
+function rvShow(ll){ const [lat,lng]=ll||curCenter();
+  $('rvKakao').href=`https://map.kakao.com/link/roadview/${lat},${lng}`; $('rvNaver').href=`https://map.naver.com/v5/?c=${lng},${lat},19,0,0,0,dh`;
+  if(!(window.kakao&&kakao.maps&&kakao.maps.Roadview)){ $('rvPano').innerHTML='<div class="tiny" style="padding:12px">카카오 지도 모듈이 아직 로드되지 않았습니다 (웹 공개판은 카카오 도메인 등록 후 사용 가능). 위 「카카오맵에서 열기」 링크로 보세요.</div>'; return; }
+  if(!RV){ RV={rv:new kakao.maps.Roadview($('rvPano')),client:new kakao.maps.RoadviewClient()}; }
+  const pos=new kakao.maps.LatLng(lat,lng);
+  RV.client.getNearestPanoId(pos,80,id=>{ if(!id){ $('rvPano').innerHTML='<div class="tiny" style="padding:12px">반경 80m 안에 로드뷰가 없습니다. 지도를 도로 쪽으로 옮기고 「화면 중심으로」를 누르거나, 「카카오맵에서 열기」로 확인하세요.</div>'; RV=null; return; }
+    if(!RV) RV={rv:new kakao.maps.Roadview($('rvPano')),client:new kakao.maps.RoadviewClient()}; RV.rv.setPanoId(id,pos); setTimeout(()=>RV&&RV.rv.relayout(),100); }); }
+if($('optRv')) $('optRv').onclick=()=>{ const on=$('rv').style.display==='none'; $('rv').style.display=on?'flex':'none'; $('optRv').classList.toggle('on',on); if(on) rvShow(); };
+if($('rvClose')) $('rvClose').onclick=()=>{ $('rv').style.display='none'; $('optRv').classList.remove('on'); };
+if($('rvHere')) $('rvHere').onclick=()=>rvShow();
 $('optSat').onclick=()=>{S.sat=!S.sat;applyMapOpts();}; $('optDist').onclick=()=>{S.dist=!S.dist;applyMapOpts();}; $('optLbl').onclick=()=>{S.lbl=!S.lbl;applyMapOpts();redraw();};
+
+/* ---------- 설치형태 그림 선택 (단면 그림) ---------- */
+const TYPE_SVG=(()=>{
+  const W=120,H=64, sky='#eef3fb', mod='#1f6feb', frm='#555', roof='#b8b8b8', wall='#ddd', grd='#8aa36a';
+  const panel=(x,y,len,deg,th=4)=>`<g transform="translate(${x} ${y}) rotate(${-deg})"><rect x="0" y="${-th}" width="${len}" height="${th}" fill="${mod}" stroke="#fff" stroke-width=".6"/></g>`;
+  const leg=(x,y1,y2)=>`<line x1="${x}" y1="${y1}" x2="${x}" y2="${y2}" stroke="${frm}" stroke-width="1.2"/>`;
+  const wrap=s=>`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><rect width="${W}" height="${H}" fill="${sky}"/>${s}</svg>`;
+  // A 원단형: 단일경사 지붕 + 10° 거치 3단
+  const A=()=>{ let s=`<polygon points="8,46 112,34 112,58 8,58" fill="${wall}"/><polygon points="6,46 114,34 114,37 6,49" fill="${roof}"/>`;
+    [20,52,84].forEach(x=>{ const yr=46-(x-8)*12/104; s+=leg(x+2,yr-3,yr)+leg(x+22,yr-8,yr-2.3)+panel(x,yr-3,24,12); }); return wrap(s); };
+  // B 인삼밭 1단: 지면 위 기둥, 1열 반복(3.5m 피치)
+  const B=()=>{ let s=`<rect x="0" y="52" width="${W}" height="12" fill="${grd}"/>`; [6,34,62,90].forEach(x=>{ s+=leg(x+3,40,52)+leg(x+19,36,52)+panel(x,40,22,12); }); return wrap(s); };
+  // D 인삼밭 플랫 2단: 박공지붕 위 2열 밴드 반복
+  const D=()=>{ let s=`<polygon points="10,58 10,42 60,30 110,42 110,58" fill="${wall}"/><polyline points="8,43 60,30 112,43" fill="none" stroke="${roof}" stroke-width="3"/>`;
+    [[14,41.5],[34,36.5],[66,31.5],[86,36.5]].forEach(([x,y])=>{ const sl=x<60?-14.5:14.5; s+=panel(x,y,16,-sl+12)+panel(x,y-6,16,-sl+12); }); return wrap(s); };
+  // F 부착형: 경사지붕에 밀착
+  const F=()=>{ let s=`<polygon points="8,48 112,30 112,58 8,58" fill="${wall}"/><polygon points="6,48 114,30 114,33 6,51" fill="${roof}"/>`;
+    for(let i=0;i<6;i++){ const x=12+i*16; const y=48-(x-8)*18/104; s+=panel(x,y-1.5,14,9.8,3); } return wrap(s); };
+  // C 토지·평슬라브: 지면에 2~4단 경사거치, 단 사이 음영 간격
+  const C=()=>{ let s=`<rect x="0" y="54" width="${W}" height="10" fill="${grd}"/>`; [4,46,88].forEach(x=>{ s+=leg(x+2,50,54)+leg(x+28,42,54)+panel(x,50,30,15,5); }); return wrap(s); };
+  // E 주차장 캐노피: 기둥 위 10° 캐노피, 아래 차량
+  const E=()=>{ let s=`<rect x="0" y="56" width="${W}" height="8" fill="#9a9a9a"/>`; s+=leg(30,30,56)+leg(84,30,56)+`<line x1="10" y1="32" x2="110" y2="28" stroke="${frm}" stroke-width="2"/>`; for(let i=0;i<5;i++){ const x=12+i*20; s+=panel(x,31.5-(x-10)*4/100,18,10,4); }
+    [[14,46],[62,46]].forEach(([x,y])=>{ s+=`<rect x="${x}" y="${y}" width="34" height="9" rx="3" fill="#e8e8e8" stroke="#888"/><rect x="${x+8}" y="${y-5}" width="16" height="6" rx="2" fill="#cfe"/><circle cx="${x+8}" cy="${y+9}" r="2.5" fill="#333"/><circle cx="${x+26}" cy="${y+9}" r="2.5" fill="#333"/>`; }); return wrap(s); };
+  return {A:A(),B:B(),D:D(),F:F(),C:C(),E:E()};
+})();
+const TYPE_SHORT={A:'원단형',B:'인삼밭 1단',D:'인삼밭 플랫 2단',F:'부착형',C:'토지·평슬라브',E:'주차장 캐노피'};
+const TYPE_DESC={A:'경사지붕에 10° 거치, 2·3·4단',B:'지면 1단, 3.5m 피치',D:'박공지붕 2열 밴드, 7m 피치',F:'징크·판넬에 밀착 (경사 그대로)',C:'토지·옥상 평슬라브 2~4단',E:'주차열 위 캐노피 10°'};
+function renderTypePick(){ const el=$('typePick'); if(!el) return; const cur=$('defType').value;
+  el.innerHTML=['A','B','D','F','C','E'].map(k=>`<div class="tpi${k===cur?' on':''}" data-t="${k}" title="${TYPE_NM[k]} — ${TYPE_DESC[k]}">${TYPE_SVG[k]}<div class="tpn">${TYPE_SHORT[k]}</div><div class="tpd">${TYPE_DESC[k]}</div></div>`).join('');
+  el.querySelectorAll('.tpi').forEach(d=>d.onclick=()=>{ $('defType').value=d.dataset.t; $('defType').dispatchEvent(new Event('change')); renderTypePick(); }); }
 
 /* ---------- 버튼 ---------- */
 $('loadBox').onclick=loadBox;
 [['mBld','bld'],['mLand','land'],['mAll','all'],['mPark','park']].forEach(([id,k])=>{ if($(id)) $(id).onclick=()=>{ setSel(k); setMode('pick'); }; }); setSel(S.sel);
-[['mCol','col'],['mErase','erase'],['mObs','obs'],['mObsDraw','obsDraw']].forEach(([id,md])=>{ if($(id)) $(id).onclick=()=>{ if(md==='obsDraw') S.draw=[]; setMode(S.mode===md?'pick':md); }; });
+window.addEventListener('keydown',e=>{ if(e.key==='Shift') S.shiftKey=true; }); window.addEventListener('keyup',e=>{ if(e.key==='Shift') S.shiftKey=false; }); window.addEventListener('blur',()=>S.shiftKey=false);
+[['mCol','col'],['mErase','erase'],['mObs','obs'],['mObsDraw','obsDraw'],['mMove','move']].forEach(([id,md])=>{ if($(id)) $(id).onclick=()=>{ if(md==='obsDraw') S.draw=[]; setMode(S.mode===md?'pick':md); }; });
 if($('obsClear')) $('obsClear').onclick=()=>{ if(!S.obs.length) return; S.obs=[]; runAll(); }; $('mDraw').onclick=()=>{ const off=S.mode==='draw'&&S.drawType!=='E'; S.draw=[]; S.drawType=null; setMode(off?'pick':'draw'); };
 if($('mParkDraw')) $('mParkDraw').onclick=()=>{ const off=S.mode==='draw'&&S.drawType==='E'; S.draw=[]; if(off){ setMode('pick'); return; } S.mode='draw'; S.drawType='E'; setMode('draw'); };
 $('undo').onclick=()=>{ S.draw.pop(); redraw(); };
@@ -490,18 +558,19 @@ $('run').onclick=runAll;
 $('modPreset').onchange=e=>{ if(e.target.value==='custom')return; const [w,a,b]=e.target.value.split(','); $('wp').value=w;$('mw').value=a;$('mh').value=b; runAll(); };
 ['wp','mw','mh'].forEach(i=>$(i).onchange=()=>{$('modPreset').value='custom';runAll();});
 ['hrs','price'].forEach(i=>$(i).onchange=()=>totals());
+$('defType').onchange=()=>renderTypePick(); renderTypePick();
 ['margin','cgap','azim','ventA','bandN','bandPitch','bandPitchB','tiltC','tiersC','shadeAng','maxH','roofSlope','eStall','eAisle','eAuto','eDouble'].forEach(i=>{ if($(i)) $(i).onchange=runAll; });
 $('goAddr').onclick=geocode; $('addr').addEventListener('keydown',e=>{if(e.key==='Enter')geocode();});
 $('print').onclick=()=>window.print();
 const P_IDS=['wp','mw','mh','margin','cgap','azim','ventA','bandN','bandPitch','bandPitchB','tiltC','tiersC','shadeAng','maxH','roofSlope','obsSize','obsGap','eStall','eAisle','eDouble','hrs','price','defType','modPreset'];
 $('save').onclick=()=>{ const data={v:2,site:$('site').value,addr:$('addr').value,center:S.center,zoom:S.zoom,params:Object.fromEntries(P_IDS.map(i=>[i,$(i).value])),
-  buildings:S.b.map(b=>({key:b.key,kind:b.kind,name:b.name,poly:b.poly,mask:b.mask,azUser:b.azUser,checked:b.checked,type:b.type,colPos:b.colPos,cols:b.colsEdited?b.cols:undefined,colsEdited:b.colsEdited,tiers:b.tiers,tierGap:b.tierGap,marginUser:b.marginUser,roofKind:b.roofKind,roofSlope:b.roofSlope,tiersC:b.tiersC,erased:b.erased,whole:b.whole||undefined,typeUser:b.typeUser||undefined,info:b.info,br:b.br,brIdx:b.brIdx})),obs:S.obs.map(o=>({poly:o.poly}))};
+  buildings:S.b.map(b=>({key:b.key,kind:b.kind,name:b.name,poly:b.poly,mask:b.mask,azUser:b.azUser,checked:b.checked,type:b.type,colPos:b.colPos,cols:b.colsEdited?b.cols:undefined,colsEdited:b.colsEdited,tiers:b.tiers,tierGap:b.tierGap,marginUser:b.marginUser,roofKind:b.roofKind,roofSlope:b.roofSlope,tiersC:b.tiersC,erased:b.erased,whole:b.whole||undefined,typeUser:b.typeUser||undefined,shift:(b.shift&&(b.shift[0]||b.shift[1]))?b.shift:undefined,off0:b.shift?b.off0:undefined,info:b.info,br:b.br,brIdx:b.brIdx})),obs:S.obs.map(o=>({poly:o.poly}))};
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([JSON.stringify(data)],{type:'application/json'})); a.download=`배치_${($('site').value||'현장').slice(0,30)}.json`; a.click(); };
 $('load').onclick=()=>$('file').click();
 $('file').onchange=e=>{ const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=()=>{ try{ const d=JSON.parse(r.result);
   $('site').value=d.site||''; $('addr').value=d.addr||''; S.center=d.center||S.center; S.zoom=d.zoom||S.zoom;
   Object.entries(d.params||{}).forEach(([k,v])=>{ if($(k))$(k).value=v; });
-  S.b=(d.buildings||[]).map(b=>{ const c=centroid(b.poly); setOrigin(c[0],c[1]); return {id:Date.now()+Math.random(),key:b.key,kind:b.kind||'bld',name:b.name,poly:b.poly,mask:b.mask,azUser:b.azUser,checked:b.checked,type:b.type||'A',colPos:b.colPos,cols:b.cols||[],colsEdited:!!b.colsEdited,tiers:b.tiers||'',tierGap:b.tierGap??null,marginUser:b.marginUser??null,roofKind:b.roofKind,roofSlope:b.roofSlope??null,tiersC:b.tiersC,erased:b.erased||[],whole:!!b.whole,typeUser:b.typeUser,info:b.info,br:b.br,brIdx:b.brIdx,mods:[],rows:0,az:0,area:area(b.poly.map(toM))}; });
+  S.b=(d.buildings||[]).map(b=>{ const c=centroid(b.poly); setOrigin(c[0],c[1]); return {id:Date.now()+Math.random(),key:b.key,kind:b.kind||'bld',name:b.name,poly:b.poly,mask:b.mask,azUser:b.azUser,checked:b.checked,type:b.type||'A',colPos:b.colPos,cols:b.cols||[],colsEdited:!!b.colsEdited,tiers:b.tiers||'',tierGap:b.tierGap??null,marginUser:b.marginUser??null,roofKind:b.roofKind,roofSlope:b.roofSlope??null,tiersC:b.tiersC,erased:b.erased||[],whole:!!b.whole,typeUser:b.typeUser,shift:b.shift||null,off0:b.off0||null,info:b.info,br:b.br,brIdx:b.brIdx,mods:[],rows:0,az:0,area:area(b.poly.map(toM))}; });
   S.obs=(d.obs||[]).map(o=>({id:Date.now()+Math.random(),poly:o.poly})); S.seq=S.b.length+1; syncTo(S.active); runAll(); }catch(err){ msg('파일을 읽을 수 없습니다'); } }; r.readAsText(f); e.target.value=''; };
 
 /* ---------- 외부 공개 (steps.js 가 사용) ---------- */

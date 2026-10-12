@@ -36,6 +36,11 @@ button.on{background:var(--acc2);border-color:var(--acc);color:var(--acc)}
 #tabs button,#mapopts button{border:0;padding:5px 10px;border-radius:6px}
 #tabs button.on{background:var(--acc);color:#fff}#mapopts button.on{background:#fde68a}
 .map{position:absolute;inset:0;display:none}.map.on{display:block}
+#rv{position:absolute;left:0;right:0;bottom:0;height:300px;z-index:1100;background:#fff;border-top:2px solid var(--acc);display:flex;flex-direction:column;box-shadow:0 -2px 8px rgba(0,0,0,.2)}
+#rvbar{display:flex;gap:8px;align-items:center;padding:4px 8px;font-size:12px;border-bottom:1px solid #e5e7eb}#rvbar a{color:var(--acc);font-weight:700;text-decoration:none;border:1px solid var(--acc);border-radius:6px;padding:3px 8px}#rvbar button{padding:3px 8px}
+#rvPano{flex:1;min-height:0}
+.tp{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:4px 0 8px}.tp .tpi{border:1.5px solid var(--line);border-radius:8px;padding:4px 4px 3px;cursor:pointer;text-align:center;background:#fff}.tp .tpi:hover{border-color:#9db4ff}.tp .tpi.on{border-color:var(--acc);background:var(--acc2);box-shadow:inset 0 0 0 1px var(--acc)}.tp svg{width:100%;height:auto;display:block}.tp .tpn{font-size:11px;font-weight:700;margin-top:2px}.tp .tpd{font-size:10px;color:#667}
+.tpic{display:inline-block;width:46px;flex:0 0 46px;border:1px solid var(--line);border-radius:4px;overflow:hidden;line-height:0}.tpic svg{width:100%;height:auto}
 #hint{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);z-index:1000;background:rgba(20,33,61,.88);color:#fff;font-size:13px;padding:7px 14px;border-radius:20px;pointer-events:none;display:none}
 #blist{display:flex;flex-direction:column;gap:6px}
 .bld{border:1px solid var(--line);border-radius:8px;padding:7px 9px;display:grid;grid-template-columns:18px 1fr auto;gap:3px 8px;align-items:center;cursor:pointer}
@@ -145,8 +150,9 @@ table.qt tfoot td{font-weight:700}table.qt tr.tot td{font-size:15px;border-top:2
     </div>
     <div class="btns" style="margin-top:6px"><button id="undo">한 점 되돌리기</button><button id="finish">그리기 완료</button><button id="clearAll">전체 지우기</button></div>
     <div class="tiny" id="selHelp" style="margin-top:4px">선택 방식을 고른 뒤 지도를 클릭하세요. 이미 선택된 항목을 다시 클릭하면 체크가 풀립니다. 지도는 줌 13 이상에서 건물이 조회됩니다.</div>
-    <details style="margin-top:6px"><summary style="cursor:pointer;font-size:12px;font-weight:700;color:#1f4fd1">✎ 배치 손보기 — 모듈 지우기 · 장애물 · 주차장 기둥</summary>
+    <details style="margin-top:6px"><summary style="cursor:pointer;font-size:12px;font-weight:700;color:#1f4fd1">✎ 배치 손보기 — 덩어리 옮기기 · 모듈 지우기 · 장애물 · 기둥</summary>
       <div class="btns" style="margin-top:6px">
+        <button id="mMove" style="color:#1f6feb;font-weight:700">✥ 덩어리 옮기기 (드래그)</button>
         <button id="mErase" style="color:#d1242f">모듈 지우기 (클릭·드래그)</button>
         <button id="mObs">장애물 찍기</button>
         <button id="mObsDraw">장애물 그리기</button>
@@ -154,7 +160,7 @@ table.qt tfoot td{font-weight:700}table.qt tr.tot td{font-size:15px;border-top:2
         <button id="mCol">주차장 기둥 추가</button>
       </div>
       <div class="row" style="margin-top:4px"><label>장애물 크기 / 여유</label><input id="obsSize" type="number" value="1.5" step="0.5" style="padding:5px 4px"><span class="x">m</span><input id="obsGap" type="number" value="0.5" step="0.1" style="padding:5px 4px"><span class="unit">m</span></div>
-      <div class="tiny">지우기: 모듈 클릭 한 장, 드래그 사각형이면 여러 장 (카드의 「복원」으로 되돌림). 장애물: 벤츄레이터·옥탑 자리를 클릭하면 네모로 비움, 큰 건 그리기, 우클릭 삭제. 기둥: 노란 점 끌어서 이동·우클릭 삭제.</div>
+      <div class="tiny">옮기기: 자동 배치가 지붕과 어긋나면 그 건물 위에서 끌어서 모듈 묶음을 통째로 이동 (카드의 ←→↑↓ 는 0.1m). 방향은 카드의 −1/+1 로 1°씩. 장애물 빠른 입력: 선택 모드에서 <b>Shift+클릭</b>. 지우기: 모듈 클릭 한 장, 드래그 사각형이면 여러 장 (카드의 「복원」으로 되돌림). 장애물: 벤츄레이터·옥탑 자리를 클릭하면 네모로 비움, 큰 건 그리기, 우클릭 삭제. 기둥: 노란 점 끌어서 이동·우클릭 삭제.</div>
     </details>
   </fieldset>
 
@@ -169,6 +175,7 @@ table.qt tfoot td{font-weight:700}table.qt tr.tot td{font-size:15px;border-top:2
   </fieldset>
 
   <fieldset><legend>4. 설치형태 규칙 <span class="tiny">(사내 설치기준·CAD 스크립트 gs ver4)</span></legend>
+    <div id="typePick" class="tp"></div>
     <div class="row"><label>새 건물 기본형태</label><select id="defType">
       <option value="A">A 원단형 — 경사지붕 10° 거치, 단 구성</option>
       <option value="B">B 인삼밭 1단 — 1열 피치 3.5m</option>
@@ -219,7 +226,16 @@ table.qt tfoot td{font-weight:700}table.qt tr.tot td{font-size:15px;border-top:2
 
 <div id="mapwrap">
   <div id="tabs"><button data-m="k" class="on">카카오</button><button data-m="v">브이월드 항공</button><button data-m="g">구글 위성</button></div>
-  <div id="mapopts"><button id="optSat" class="on">🛰 위성</button><button id="optDist">🗺 지적편집도</button><button id="optLbl" class="on">🏷 용량 표시</button></div>
+  <div id="mapopts"><button id="optSat" class="on">🛰 위성</button><button id="optDist">🗺 지적편집도</button><button id="optLbl" class="on">🏷 용량 표시</button><button id="optRv" title="카카오 로드뷰로 지붕 위 벤츄레이터·옥탑·계단실 확인">📷 로드뷰</button></div>
+  <div id="rv" style="display:none">
+    <div id="rvbar"><b>📷 로드뷰</b> <span class="tiny">지도 화면 중심에서 가장 가까운 지점. 지붕 구조물(벤츄레이터·옥탑·계단실)이 보이면 지도에서 Shift+클릭으로 장애물 표시</span>
+      <span style="flex:1"></span>
+      <button id="rvHere">화면 중심으로</button>
+      <a id="rvKakao" target="_blank" rel="noopener">카카오맵에서 열기 (과거 로드뷰·시점 선택)</a>
+      <a id="rvNaver" target="_blank" rel="noopener">네이버 거리뷰</a>
+      <button id="rvClose">✕</button></div>
+    <div id="rvPano"></div>
+  </div>
   <div id="mapK" class="map on"></div>
   <div id="mapV" class="map"></div>
   <div id="mapG" class="map"></div>
