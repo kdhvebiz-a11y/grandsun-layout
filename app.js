@@ -284,7 +284,12 @@ window.__initG=function(){
   m.addListener('idle',()=>{ if(S.active==='g'){const c=m.getCenter(); S.center=[c.lat(),c.lng()]; S.zoom=m.getZoom();} });
   M.g=m; M.ready.g=true; redraw();
 };
-function initG(){ const s=document.createElement('script'); s.src=`https://maps.googleapis.com/maps/api/js?key=${K.google}&loading=async&callback=__initG&language=ko&region=KR`; s.async=true; s.onerror=()=>msg('구글 지도 로드 실패'); document.head.appendChild(s); }
+function googleFail(why){ if(S._gFailed) return; S._gFailed=true;
+  if(S.active==='g'){ const b=document.querySelector('#tabs button[data-m="k"]')||document.querySelector('#tabs button[data-m="v"]'); if(b) b.click(); }
+  const tb=document.querySelector('#tabs button[data-m="g"]'); if(tb){ tb.title='구글 지도 키 문제로 사용 불가'; tb.style.opacity='.45'; }
+  msg(`구글 위성을 불러오지 못했습니다 (${why}). keys.js 의 google 키가 체험용이라 이 사이트 주소에서는 막혀 있습니다. 구글 클라우드 콘솔에서 결제 등록 + Maps JavaScript API 사용 설정 + HTTP 리퍼러에 ${location.origin}/* 를 넣은 자체 키를 keys.js 에 넣으면 됩니다. 그 전까지는 카카오 위성·브이월드 항공사진을 쓰세요.`,'warn'); }
+window.gm_authFailure=()=>googleFail('키 인증 실패');
+function initG(){ /* 구글 위성 사용 안 함 (키 필요) */ }
 
 function applyMapOpts(){
   if(M.ready.k){ M.k.setMapTypeId(S.sat?kakao.maps.MapTypeId.HYBRID:kakao.maps.MapTypeId.ROADMAP);
@@ -636,5 +641,5 @@ window.APP = { S, M, summary, runAll, totals, layout, rule, syncTo:()=>syncTo(S.
 const _totals=totals; totals=function(){ _totals(); if(window.APP.onTotals) window.APP.onTotals(summary()); };
 
 /* ---------- 시작 ---------- */
-initK(); initV(); initG(); totals();
+initK(); initV(); totals();
 })();
