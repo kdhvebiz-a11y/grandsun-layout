@@ -553,6 +553,7 @@ function rvShow(ll){ const [lat,lng]=ll||curCenter();
     if(!RV) RV={rv:new kakao.maps.Roadview($('rvPano')),client:new kakao.maps.RoadviewClient()}; RV.rv.setPanoId(id,pos); setTimeout(()=>RV&&RV.rv.relayout(),100); }); }
 if($('fcClose')) $('fcClose').onclick=()=>{ S.focus=null; showFocusCard(); redraw(); }; document.querySelectorAll('#focusCard [data-sel]').forEach(b=>b.onclick=()=>focusApply(b.dataset.sel));
 if($('optRv')) $('optRv').onclick=()=>{ const on=$('rv').style.display==='none'; $('rv').style.display=on?'flex':'none'; $('optRv').classList.toggle('on',on); if(on) rvShow(); };
+if($('optOld')) $('optOld').onclick=()=>{ const [lat,lng]=curCenter(); window.open(`https://map.kakao.com/link/map/${lat},${lng}`,'_blank','noopener'); msg('카카오맵 새 창이 열립니다. 오른쪽 위 지도종류 버튼 → 「위성」 → 「최근사진」 옆 연도(2008~)를 고르면 과거 위성사진이 보입니다. 공식 API에는 과거사진이 없어 새 창으로만 볼 수 있습니다.','info'); };
 if($('rvClose')) $('rvClose').onclick=()=>{ $('rv').style.display='none'; $('optRv').classList.remove('on'); };
 if($('rvHere')) $('rvHere').onclick=()=>rvShow();
 $('optSat').onclick=()=>{S.sat=!S.sat;applyMapOpts();}; $('optDist').onclick=()=>{S.dist=!S.dist;applyMapOpts();}; $('optLbl').onclick=()=>{S.lbl=!S.lbl;applyMapOpts();redraw();};
