@@ -39,8 +39,15 @@ button.on{background:var(--acc2);border-color:var(--acc);color:var(--acc)}
 #rv{position:absolute;left:0;right:0;bottom:0;height:300px;z-index:1100;background:#fff;border-top:2px solid var(--acc);display:flex;flex-direction:column;box-shadow:0 -2px 8px rgba(0,0,0,.2)}
 #rvbar{display:flex;gap:8px;align-items:center;padding:4px 8px;font-size:12px;border-bottom:1px solid #e5e7eb}#rvbar a{color:var(--acc);font-weight:700;text-decoration:none;border:1px solid var(--acc);border-radius:6px;padding:3px 8px}#rvbar button{padding:3px 8px}
 #rvPano{flex:1;min-height:0}
+.guide{border:1px solid #c7d7ff;background:#f3f7ff;border-radius:8px;padding:6px 10px;margin-bottom:8px;font-size:12px}.guide summary{cursor:pointer;font-weight:700;color:#1f4fd1}.guide ol{margin:6px 0 2px 18px;padding:0;line-height:1.5}.guide li{margin:3px 0}
+.toast{position:absolute;left:50%;bottom:52px;transform:translateX(-50%);z-index:1200;max-width:70%;padding:9px 14px;border-radius:10px;font-size:13px;line-height:1.45;box-shadow:0 4px 14px rgba(0,0,0,.25);background:#1f4fd1;color:#fff}.toast.warn{background:#fff7ed;color:#9a3412;border:1.5px solid #f59e0b}.toast.info{background:#eef3ff;color:#1e3a8a;border:1.5px solid #93c5fd}
+#focusCard{position:absolute;left:50%;top:56px;transform:translateX(-50%);z-index:1050;background:#fff;border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.28);min-width:340px;max-width:460px}
+.fc-head{display:flex;align-items:flex-start;gap:8px;padding:10px 10px 6px 12px}.fc-head>div{flex:1;min-width:0}.fc-addr{font-size:15px;font-weight:800;line-height:1.3}#fcClose{border:0;background:transparent;font-size:16px;padding:0 4px}
+.fc-btns{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:4px 10px 6px}.fc-btns button{padding:7px 8px;font-size:12px}
+.pin{filter:drop-shadow(0 2px 2px rgba(0,0,0,.35))}
 .tp{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:4px 0 8px}.tp .tpi{border:1.5px solid var(--line);border-radius:8px;padding:4px 4px 3px;cursor:pointer;text-align:center;background:#fff}.tp .tpi:hover{border-color:#9db4ff}.tp .tpi.on{border-color:var(--acc);background:var(--acc2);box-shadow:inset 0 0 0 1px var(--acc)}.tp svg{width:100%;height:auto;display:block}.tp .tpn{font-size:11px;font-weight:700;margin-top:2px}.tp .tpd{font-size:10px;color:#667}
-.tpic{display:inline-block;width:46px;flex:0 0 46px;border:1px solid var(--line);border-radius:4px;overflow:hidden;line-height:0}.tpic svg{width:100%;height:auto}
+.tpg{margin:0 0 4px}.tpg .tpi{padding:2px 2px 1px}.tpg .tpn{font-size:10px}
+.tpic{cursor:pointer;display:inline-block;width:46px;flex:0 0 46px;border:1px solid var(--line);border-radius:4px;overflow:hidden;line-height:0}.tpic svg{width:100%;height:auto}
 #hint{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);z-index:1000;background:rgba(20,33,61,.88);color:#fff;font-size:13px;padding:7px 14px;border-radius:20px;pointer-events:none;display:none}
 #blist{display:flex;flex-direction:column;gap:6px}
 .bld{border:1px solid var(--line);border-radius:8px;padding:7px 9px;display:grid;grid-template-columns:18px 1fr auto;gap:3px 8px;align-items:center;cursor:pointer}
@@ -127,8 +134,16 @@ table.qt tfoot td{font-weight:700}table.qt tr.tot td{font-size:15px;border-top:2
 
 <div id="app" class="step on" data-s="2">
 <aside id="side" class="pane">
+  <details id="guide" class="guide" open><summary>📘 사용 순서 (처음이면 펼쳐 보세요)</summary>
+    <ol>
+      <li><b>주소 검색</b> — 지번·도로명·상호 아무거나 입력하고 Enter. 지도에 분홍 테두리 필지와 주소 카드가 뜹니다.</li>
+      <li><b>카드에서 하나 선택</b> — 🏢 건물만(지붕) · 🌾 토지 · ⬛ 전체 지번 · 🅿 주차장. 누르는 즉시 모듈이 깔리고 용량이 나옵니다.</li>
+      <li><b>보정</b> — 오른쪽 건물 카드에서 형태 그림 클릭, 방향 ±1°, 「마우스로 끌기」로 위치 맞추기. 지붕 위 구조물은 지도에서 <b>Shift+클릭</b>(또는 📷 로드뷰로 확인).</li>
+      <li>위 ③ 견적 → ④ 수익성 → ⑤ 제안서 출력 탭으로 진행. 중간 저장은 맨 아래 「저장(JSON)」.</li>
+    </ol>
+  </details>
   <fieldset><legend>1. 위치</legend>
-    <div class="search"><input id="addr" placeholder="지번·도로명 주소 또는 상호"><button id="goAddr" class="pri">검색</button></div>
+    <div class="search"><input id="addr" placeholder="지번·도로명 주소 또는 상호 → Enter"><button id="goAddr" class="pri">검색</button></div>
     <div class="row" style="margin-top:6px"><label>현장명</label><input id="site" placeholder="예: 경남 김해시 대동면 월촌리 1296-2"></div>
   </fieldset>
 
@@ -227,6 +242,12 @@ table.qt tfoot td{font-weight:700}table.qt tr.tot td{font-size:15px;border-top:2
 <div id="mapwrap">
   <div id="tabs"><button data-m="k" class="on">카카오</button><button data-m="v">브이월드 항공</button><button data-m="g">구글 위성</button></div>
   <div id="mapopts"><button id="optSat" class="on">🛰 위성</button><button id="optDist">🗺 지적편집도</button><button id="optLbl" class="on">🏷 용량 표시</button><button id="optRv" title="카카오 로드뷰로 지붕 위 벤츄레이터·옥탑·계단실 확인">📷 로드뷰</button></div>
+  <div id="toast" class="toast" style="display:none"></div>
+  <div id="focusCard" style="display:none">
+    <div class="fc-head"><div><div id="fcAddr" class="fc-addr">주소</div><div id="fcSub" class="tiny">지번</div></div><button id="fcClose" title="표시 지우기">✕</button></div>
+    <div class="fc-btns"><button data-sel="bld">🏢 건물만</button><button data-sel="land">🌾 토지(건물 제외)</button><button data-sel="all">⬛ 전체 지번</button><button data-sel="park">🅿 주차장</button></div>
+    <div class="tiny" style="padding:0 10px 8px">이 필지를 어떻게 잡을지 고르면 바로 배치됩니다</div>
+  </div>
   <div id="rv" style="display:none">
     <div id="rvbar"><b>📷 로드뷰</b> <span class="tiny">지도 화면 중심에서 가장 가까운 지점. 지붕 구조물(벤츄레이터·옥탑·계단실)이 보이면 지도에서 Shift+클릭으로 장애물 표시</span>
       <span style="flex:1"></span>
@@ -254,7 +275,7 @@ table.qt tfoot td{font-weight:700}table.qt tr.tot td{font-size:15px;border-top:2
   </fieldset>
   <fieldset style="flex:1"><legend>건물별 (체크된 것만 집계)</legend>
     <div id="blist"></div>
-    <div class="tiny" id="bEmpty">「화면 안 건물 불러오기」 후 지도에서 건물을 클릭하세요.</div>
+    <div class="tiny" id="bEmpty">아직 선택된 건물·토지가 없습니다. 왼쪽 「1. 위치」에 주소를 넣고 Enter → 지도 위 주소 카드에서 🏢 건물만 / 🌾 토지 / ⬛ 전체 지번 / 🅿 주차장 중 하나를 누르세요.</div>
   </fieldset>
 </aside>
 </div>

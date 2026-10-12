@@ -3,7 +3,11 @@
 const K = window.KEYS;
 const $ = id => document.getElementById(id);
 const S = { b:[], obs:[], seq:1, mode:'pick', sel:'bld', drawType:null, draw:[], maskFor:null, active:'k', center:[35.3100,128.9100], zoom:18, sat:true, dist:false, lbl:true };
-const msg = t => { $('msg').textContent = t||''; };
+let _toastT=null;
+const msg = (t,level) => { $('msg').textContent = (t||'').replace(/<[^>]+>/g,'');
+  const el=$('toast'); if(!el) return; if(!t){ el.style.display='none'; return; }
+  const lv=level||(/실패|오류|없습니다|않습니다|확인|필요|못/.test(t)?'warn':'info'); el.className='toast '+lv; el.innerHTML=(lv==='warn'?'⚠ ':'')+t; el.style.display='block';
+  clearTimeout(_toastT); _toastT=setTimeout(()=>{ el.style.display='none'; }, lv==='warn'?9000:5000); };
 const hint = t => { const h=$('hint'); h.textContent=t||''; h.style.display=t?'block':'none'; };
 const TYPE_NM = {A:'A 원단형 (경사지붕 10° 거치)',B:'B 인삼밭 1단 (피치 3.5m)',D:'D 인삼밭 플랫 2단 (피치 7m)',F:'F 부착형 (징크·제로솔루션 가로배치)',C:'C 토지·평슬라브 경사거치 (2~4단)',E:'E 주차장 캐노피'};
 const sin=t=>Math.sin(t*Math.PI/180), tan=t=>Math.tan(t*Math.PI/180);
@@ -62,9 +66,9 @@ function rule(type,b){
     case 'B': // 인삼밭 플랫 1단: 모듈 가로(2,465)가 건물 길이 방향, 1열 밴드
       return {...base, w:m.Sh, d:m.L, cgap:0.01, rgap:0.01, perp:true, rowsPerBand:1, bandPitch:num('bandPitchB',3.5)};
     case 'D': // 2단 인삼밭형: 폭 1,134 가로 연속, 2열 밴드가 7.0m 피치로 반복 (LISP fn_FlatLogic)
-      return {...base, w:m.Sh, d:m.L, cgap:0.01, rgap:0.01, perp:true, rowsPerBand:Math.max(1,num('bandN',2)), bandPitch:num('bandPitch',7.0), margin:0.7}; // 설치기준: 인삼밭 끝단 700
+      return {...base, w:m.Sh, d:m.L, cgap:0.01, rgap:0.01, perp:true, rowsPerBand:Math.max(1,num('bandN',2)), bandPitch:num('bandPitch',7.0)}; // 끝단 여유는 공통 기본 0.5m(사용자 지정 2026-10-12), 필요 시 카드에서 변경
     case 'F': // 부착형(징크판넬·제로솔루션 가로배치 1단): 모듈 가로(2,465)가 용마루 방향, 경사 방향으로 1,134 연속, 끝단 700, 20장마다 1m 통로
-      return {...base, w:m.Sh, d:m.L, cgap:0.02, rgap:0.01, perp:true, margin:0.7, walkEvery:20, walkGap:m.L+0.01}; // 20장마다 1장 자리 바람구멍
+      return {...base, w:m.Sh, d:m.L, cgap:0.02, rgap:0.01, perp:true, walkEvery:20, walkGap:m.L+0.01}; // 끝단 기본 0.5m, 20장마다 1장 자리 바람구멍
     case 'E': { // 주차장 캐노피 (사내 DWG 실측): 모듈 10° 세로 2장(2.428×2+0.022=4.88m)이 주차열 1칸(5m)을 덮고, 가로 피치 1.144m.
       // 등맞댐 2열은 두 주차열 사이 600mm(기둥 자리)를 포함해 10.6m 구간에 4장 연속(9.78m). 통행로 6m.
       const stall=num('eStall',5.0), aisle=num('eAisle',6.0), pl=m.L*cos(10), auto=$('eAuto')?$('eAuto').checked:true;
@@ -176,17 +180,17 @@ const pnuOf=p=>{ const sn=(p&&p.bd_mgt_sn)||''; return /^\d{19}/.test(sn)?sn.sli
 const jibunOf=p=>{ const u=pnuOf(p); if(!u) return ''; const san=u[10]==='2'?'산 ':'', bun=String(+u.slice(11,15)), ji=+u.slice(15,19); return san+bun+(ji?'-'+ji:''); };
 const roadOf=p=>p?[p.sido,p.sigungu,p.gu,p.rd_nm,p.buld_no].filter(Boolean).join(' '):'';
 const ROOF_SUGGEST=r=>{ if(!r) return null; if(/판넬|패널|철판|샌드위치|칼라|강판|함석|슬레이트/.test(r)) return {t:'A',why:'경사 판넬지붕 → 원단형'}; if(/슬라브|슬래브|콘크리트|평지붕|방수/.test(r)) return {t:'C',why:'평슬라브 → 경사거치'}; if(/기와|징크|아연|동판/.test(r)) return {t:'F',why:'징크·기와 → 부착형'}; return null; };
-async function brFetch(b){ const u=pnuOf(b.info); if(!u){ msg('이 건물은 PNU(지번)를 알 수 없어 건축물대장을 조회할 수 없습니다'); return; }
-  const api=(K.apiBase||'').replace(/\/$/,''); if(!api&&!/^(localhost|127\.0\.0\.1)$/.test(location.hostname)){ msg('건축물대장 조회는 사내 서버(서버실행.bat) 또는 중계 서버(keys.js apiBase) 가 있어야 합니다'); b.br=null; renderList(); return; }
-  msg('건축물대장 조회 중…'); try{ const r=await fetch(`${api}/api/br?sigunguCd=${u.slice(0,5)}&bjdongCd=${u.slice(5,10)}&platGbCd=${u[10]==='2'?1:0}&bun=${u.slice(11,15)}&ji=${u.slice(15,19)}`); const d=await r.json();
-    if(d.error){ msg(d.error); if(/datago/.test(d.error)) alert('건축물대장 조회에는 공공데이터포털(data.go.kr) 인증키가 필요합니다.\n인증키를 배치도 폴더의 datago.txt 에 한 줄로 넣고 서버를 다시 실행하세요.'); return; }
-    if(!d.count){ msg('건축물대장에 해당 지번 건물이 없습니다 (지번 '+jibunOf(b.info)+')'); b.br=null; renderList(); return; }
+async function brFetch(b,manual){ const u=pnuOf(b.info); if(!u){ if(manual) msg('이 건물은 PNU(지번)를 알 수 없어 건축물대장을 조회할 수 없습니다'); return; } b.brErr='';
+  const api=(K.apiBase||'').replace(/\/$/,''); if(!api&&!/^(localhost|127\.0\.0\.1)$/.test(location.hostname)){ b.br=null; b.brErr='웹 공개판에서는 건축물대장 자동조회가 꺼져 있습니다 (사내 PC 버전에서 가능)'; if(!S._brNoted){ S._brNoted=true; msg('웹 공개판은 건축물대장(높이·지붕) 자동조회가 꺼져 있습니다 — 형태는 카드에서 직접 고르세요. 사내 PC 버전(서버실행.bat)에서는 자동 조회됩니다.','info'); } renderList(); return; }
+  if(manual) msg('건축물대장 조회 중…','info'); try{ const r=await fetch(`${api}/api/br?sigunguCd=${u.slice(0,5)}&bjdongCd=${u.slice(5,10)}&platGbCd=${u[10]==='2'?1:0}&bun=${u.slice(11,15)}&ji=${u.slice(15,19)}`); const d=await r.json();
+    if(d.error){ b.br=null; b.brErr=d.error; if(manual) msg(d.error,'warn'); renderList(); return; }
+    if(!d.count){ b.br=null; b.brErr='건축물대장에 해당 지번 건물 없음 (지번 '+jibunOf(b.info)+')'; if(manual) msg(b.brErr,'warn'); renderList(); return; }
     // 층수가 같은 동을 우선 선택
     const fl=+(b.info.gro_flo_co||0); let i=d.items.findIndex(x=>+x.grndFlrCnt===fl); if(i<0) i=0; b.br=d.items; b.brIdx=i;
     const x=d.items[i], sug=ROOF_SUGGEST(x.roofCdNm||x.etcRoof); // 사용자가 형태를 직접 고르지 않았으면 지붕재료로 자동 적용
     if(sug&&!b.typeUser&&b.type!==sug.t){ b.type=sug.t; msg(`건축물대장 ${d.count}건 — 지붕 「${x.roofCdNm||x.etcRoof}」 → ${TYPE_NM[sug.t]} 자동 적용`); runAll(); return; }
-    msg(`건축물대장 ${d.count}건 조회 (높이 ${x.heit||'-'}m, 지붕 ${x.roofCdNm||x.etcRoof||'-'})`); renderList(); }
-  catch(e){ b.br=null; msg('건축물대장 조회 실패: 서버실행.bat 을 새 server.py 로 다시 실행했는지 확인 ('+e.message+')'); } }
+    if(manual) msg(`건축물대장 ${d.count}건 조회 (높이 ${x.heit||'-'}m, 지붕 ${x.roofCdNm||x.etcRoof||'-'})`,'info'); renderList(); }
+  catch(e){ b.br=null; b.brErr='건축물대장 서버 응답 없음 — 「다시 조회」를 눌러 보세요'; if(manual) msg(b.brErr+' ('+e.message+')','warn'); renderList(); } }
 /* 체크된 건물 중 아직 대장을 안 본 건물은 자동 조회 (한 번만) */
 function brAuto(){ const b=S.b.find(x=>x.checked&&x.kind==='bld'&&x.br===undefined&&pnuOf(x.info)); if(b){ b.br=null; brFetch(b).then(()=>setTimeout(brAuto,300)); } }
 function brHtml(b){ if(!b.br) return ''; const x=b.br[b.brIdx||0]||{}; const sug=ROOF_SUGGEST(x.roofCdNm||x.etcRoof);
@@ -204,20 +208,22 @@ function renderList(){
   S.b.slice().sort((a,b)=>(b.checked-a.checked)).forEach(b=>{
     const d=document.createElement('div'); d.className='bld'+(b.checked?' sel':'');
     d.innerHTML=`<input type="checkbox" ${b.checked?'checked':''}><div class="nm"><input value="${b.name}" title="이름 수정"></div><button class="del" title="목록에서 제거">✕</button>
-      <div class="ty"><span>형태</span><span class="tpic" title="${TYPE_SHORT[b.type]||''}">${TYPE_SVG[b.type]||''}</span><select>${Object.entries(TYPE_NM).map(([k,v])=>`<option value="${k}" ${b.type===k?'selected':''}>${v}</option>`).join('')}</select></div>
+      <div class="ty"><span>형태</span><span class="tpic" title="클릭해서 형태 바꾸기">${TYPE_SVG[b.type]||''}</span><button class="tpbtn" title="클릭해서 형태 바꾸기" style="flex:1;text-align:left;padding:4px 8px">${TYPE_SHORT[b.type]||b.type} <span class="tiny">▾ ${TYPE_DESC[b.type]||''}</span></button></div>
+      <div class="tp tpg" style="grid-column:2/4">${['A','B','D','F','C','E'].map(k=>`<div class="tpi${k===b.type?' on':''}" data-t="${k}" title="${TYPE_NM[k]}">${TYPE_SVG[k]}<div class="tpn">${TYPE_SHORT[k]}</div></div>`).join('')}</div>
       <div class="ty"><span>방향</span><input type="range" class="azr" min="0" max="179" step="1" value="${Math.round(b.az||0)}"><input type="number" class="azn" min="0" max="179" step="1" value="${Math.round(b.az||0)}" style="width:48px;padding:3px 4px;border:1px solid var(--line);border-radius:5px;font-size:12px"><span>°</span><button class="azm" title="1° 반시계" style="padding:3px 6px;font-size:11px">−1</button><button class="azp" title="1° 시계" style="padding:3px 6px;font-size:11px">+1</button><button class="aza" title="최장변 방향으로 자동" style="padding:3px 6px;font-size:11px;${b.azUser==null?'background:#e8f0fe;border-color:#1f6feb;color:#1f6feb':''}">자동</button></div>
-      <div class="ty"><span>위치 이동</span><button class="sh" data-d="-0.1,0" title="서쪽으로 0.1m" style="padding:3px 7px;font-size:11px">←</button><button class="sh" data-d="0.1,0" title="동쪽으로 0.1m" style="padding:3px 7px;font-size:11px">→</button><button class="sh" data-d="0,0.1" title="북쪽으로 0.1m" style="padding:3px 7px;font-size:11px">↑</button><button class="sh" data-d="0,-0.1" title="남쪽으로 0.1m" style="padding:3px 7px;font-size:11px">↓</button><span class="tiny">${b.shift?`동 ${b.shift[0].toFixed(2)} · 북 ${b.shift[1].toFixed(2)}m`:'0'}</span>${b.shift?`<button class="sh0" style="padding:3px 6px;font-size:11px">원위치</button>`:''}<span class="tiny" style="margin-left:auto">지도에서 끌기: 「덩어리 옮기기」</span></div>
-      <div class="ty"><span>경계 이격</span><input class="mrg" type="number" step="0.5" min="0" value="${b.marginUser??''}" placeholder="${b.kind==='strip'?'0':(b.type==='A'?'0.5':b.type==='D'||b.type==='F'?'0.7':$('margin').value)}" title="이 항목만 가장자리에서 띄우는 거리(m). 토지는 지번 경계에서 1~3m 권장. 비우면 형태별 기본" style="width:60px;padding:3px 4px;border:1px solid var(--line);border-radius:5px;font-size:12px"><span>m</span>${b.kind==='parcel'||b.kind==='draw'?`<button class="mq" data-v="1" style="padding:3px 6px;font-size:11px">1</button><button class="mq" data-v="2" style="padding:3px 6px;font-size:11px">2</button><button class="mq" data-v="3" style="padding:3px 6px;font-size:11px">3</button>`:''}${b.erased&&b.erased.length?`<button class="rst" style="margin-left:auto;padding:3px 6px;font-size:11px;color:#d1242f">지운 ${b.erased.length}장 복원</button>`:''}</div>
+      <div class="ty"><span>위치 이동</span><button class="nud" data-d="-0.1,0" title="서쪽으로 0.1m (크게 옮기려면 2번 「덩어리 옮기기」로 지도에서 끌기)" style="padding:3px 7px;font-size:11px">←</button><button class="nud" data-d="0.1,0" title="동쪽으로 0.1m" style="padding:3px 7px;font-size:11px">→</button><button class="nud" data-d="0,0.1" title="북쪽으로 0.1m" style="padding:3px 7px;font-size:11px">↑</button><button class="nud" data-d="0,-0.1" title="남쪽으로 0.1m" style="padding:3px 7px;font-size:11px">↓</button><button class="mv${S.mode==='move'?' on':''}" title="켜고 지도에서 이 건물을 마우스로 잡아 끌면 모듈 묶음이 통째로 이동" style="padding:3px 7px;font-size:11px">✥ 마우스로 끌기</button><span class="tiny">${b.shift?`동 ${b.shift[0].toFixed(2)} · 북 ${b.shift[1].toFixed(2)}m`:''}</span>${b.shift?`<button class="sh0" style="padding:3px 6px;font-size:11px">원위치</button>`:''}</div>
+      <div class="ty"><span>경계 이격</span><input class="mrg" type="number" step="0.5" min="0" value="${b.marginUser??''}" placeholder="${b.kind==='strip'?'0':$('margin').value}" title="이 항목만 가장자리에서 띄우는 거리(m). 토지는 지번 경계에서 1~3m 권장. 비우면 형태별 기본" style="width:60px;padding:3px 4px;border:1px solid var(--line);border-radius:5px;font-size:12px"><span>m</span>${b.kind==='parcel'||b.kind==='draw'?`<button class="mq" data-v="1" style="padding:3px 6px;font-size:11px">1</button><button class="mq" data-v="2" style="padding:3px 6px;font-size:11px">2</button><button class="mq" data-v="3" style="padding:3px 6px;font-size:11px">3</button>`:''}${b.erased&&b.erased.length?`<button class="rst" style="margin-left:auto;padding:3px 6px;font-size:11px;color:#d1242f">지운 ${b.erased.length}장 복원</button>`:''}</div>
       ${b.type==='A'?`<div class="ty"><span>지붕</span><select class="rk" style="flex:1"><option value="gable" ${!b.roofKind||b.roofKind==='gable'?'selected':''}>박공 (남·북 양면)</option><option value="south" ${b.roofKind==='south'?'selected':''}>단일경사 남향</option><option value="north" ${b.roofKind==='north'?'selected':''}>단일경사 북향</option><option value="flat" ${b.roofKind==='flat'?'selected':''}>평지붕</option></select><input class="rs" type="number" step="1" value="${b.roofSlope??''}" placeholder="${$('roofSlope')?$('roofSlope').value:10}" title="지붕 경사각 °" style="width:46px;padding:3px 4px;border:1px solid var(--line);border-radius:5px;font-size:12px"><span>°</span></div>`:''}
       ${b.type==='C'?`<div class="ty"><span>단수</span><select class="tc" style="flex:1"><option value="auto" ${!b.tiersC||b.tiersC==='auto'?'selected':''}>자동 (3단 우선, 남는 폭 2단)</option><option value="2" ${b.tiersC==='2'?'selected':''}>2단</option><option value="3" ${b.tiersC==='3'?'selected':''}>3단</option><option value="4" ${b.tiersC==='4'?'selected':''}>4단</option></select></div>`:''}
       ${b.kind==='strip'?'':`<div class="ty"><button class="rng" style="flex:1">${b.mask?'범위 다시 지정':'범위 지정 (일부만 설치)'}</button>${b.mask?'<button class="rngx">범위 해제</button>':''}</div>`}
       ${(b.type==='A'||b.type==='C')?`<div class="ty"><span>단 구성</span><input class="tiers" value="${b.tiers||''}" placeholder="자동 (예: 3,3 / 2,2 · 2,3,4 · 3,2,3,2)" title="남쪽 처마부터 단별 장수. '/' 뒤는 북쪽 처마부터. 비우면 자동" style="flex:1;min-width:0;padding:3px 6px;border:1px solid var(--line);border-radius:5px;font-size:12px"><input class="tgap" type="number" step="0.1" value="${b.tierGap??''}" placeholder="${b.type==='A'?'0.5':'3.2/2.2'}" title="단 사이 간격 m (비우면 기본)" style="width:52px;padding:3px 4px;border:1px solid var(--line);border-radius:5px;font-size:12px"><span>m</span></div>`:''}
       ${b.type==='E'?`<div class="ty"><span>기둥</span><select class="colp"><option value="auto" ${!b.colPos||b.colPos==='auto'?'selected':''}>자동 (1열 뒤쪽 · 2열 가운데)</option><option value="b" ${b.colPos==='b'?'selected':''}>뒤쪽</option><option value="f" ${b.colPos==='f'?'selected':''}>앞쪽</option><option value="c" ${b.colPos==='c'?'selected':''}>가운데</option></select><button class="colr" title="손으로 옮긴 기둥을 버리고 규칙대로 다시">${b.colsEdited?'자동 재배치':'재배치'}</button></div>`:''}
-      <div class="st">${kindLabel(b)}${b.mask?'<b style="color:#ff9500">범위 지정됨</b> · ':''}${Math.round(b.area).toLocaleString()} m² · ${b.checked?`<b>${b.mods.length}장 · ${(b.mods.length*wp/1000).toLocaleString(undefined,{maximumFractionDigits:2})} kW</b> · ${b.rows}열 · ${Math.round(b.az)}°${b.type==='E'&&b.cols?` · 기둥 ${b.cols.length}개${b.colsEdited?'(수정됨)':''}`:''}${(b.type==='A'||b.type==='C')&&b.tiersUsed?` · 단 <b>${b.tiersUsed}</b>${b.tiers?'(지정)':'(자동)'}`:''}${b.type==='C'&&b.gapsUsed?` · ${b.gapsUsed}`:''}${b.type==='A'&&b.hmax?` · 최고 ${b.hmax.toFixed(2)}m`:''} · 이격 ${b.marginUsed??''}m`:'미선택'}${infoShort(b.info)}</div>${b.info?`<div class="ty" style="flex-wrap:wrap;font-size:11px;color:#66727f">${roadOf(b.info)}${jibunOf(b.info)?' · 지번 '+jibunOf(b.info):''}${pnuOf(b.info)?`<button class="brbtn" style="margin-left:auto;padding:2px 8px;font-size:11px">${b.br?'건축물대장 다시 조회':'건축물대장 조회 (높이·지붕)'}</button>`:''}</div>${brHtml(b)}<div class="ty">${infoHtml(b.info)}</div>`:''}`;
-    const brb=d.querySelector('.brbtn'); if(brb) brb.onclick=()=>{ b.br=null; brFetch(b); };
+      <div class="st">${kindLabel(b)}${b.mask?'<b style="color:#ff9500">범위 지정됨</b> · ':''}${Math.round(b.area).toLocaleString()} m² · ${b.checked?`<b>${b.mods.length}장 · ${(b.mods.length*wp/1000).toLocaleString(undefined,{maximumFractionDigits:2})} kW</b> · ${b.rows}열 · ${Math.round(b.az)}°${b.type==='E'&&b.cols?` · 기둥 ${b.cols.length}개${b.colsEdited?'(수정됨)':''}`:''}${(b.type==='A'||b.type==='C')&&b.tiersUsed?` · 단 <b>${b.tiersUsed}</b>${b.tiers?'(지정)':'(자동)'}`:''}${b.type==='C'&&b.gapsUsed?` · ${b.gapsUsed}`:''}${b.type==='A'&&b.hmax?` · 최고 ${b.hmax.toFixed(2)}m`:''} · 이격 ${b.marginUsed??''}m`:'미선택'}${infoShort(b.info)}</div>${b.info?`<div class="ty" style="flex-wrap:wrap;font-size:11px;color:#66727f">${roadOf(b.info)}${jibunOf(b.info)?' · 지번 '+jibunOf(b.info):''}${pnuOf(b.info)?`${b.brErr?`<span class="tiny" style="color:#b45309">⚠ ${b.brErr}</span>`:''}<button class="brbtn" style="margin-left:auto;padding:2px 8px;font-size:11px">${b.br?'건축물대장 다시 조회':b.brErr?'다시 조회':'건축물대장 조회 (높이·지붕)'}</button>`:''}</div>${brHtml(b)}<div class="ty">${infoHtml(b.info)}</div>`:''}`;
+    const brb=d.querySelector('.brbtn'); if(brb) brb.onclick=()=>{ b.br=null; brFetch(b,true); };
     const brs=d.querySelector('.brsel'); if(brs) brs.onchange=e=>{ b.brIdx=+e.target.value; renderList(); };
     const bra=d.querySelector('.brapply'); if(bra) bra.onclick=()=>{ b.type=bra.dataset.t; b.typeUser=true; runAll(); };
-    d.querySelectorAll('.sh').forEach(x=>x.onclick=()=>{ const [dE,dN]=x.dataset.d.split(',').map(Number); applyShift(b,dE,dN); }); const sh0=d.querySelector('.sh0'); if(sh0) sh0.onclick=()=>{ b.shift=null; b.off0=null; runAll(); };
+    d.querySelector('.mv').onclick=e=>{ e.stopPropagation(); setMode(S.mode==='move'?'pick':'move'); document.querySelectorAll('#blist .mv').forEach(x=>x.classList.toggle('on',S.mode==='move')); };
+    d.querySelectorAll('.nud').forEach(x=>x.onclick=()=>{ const [dE,dN]=x.dataset.d.split(',').map(Number); applyShift(b,dE,dN); }); const sh0=d.querySelector('.sh0'); if(sh0) sh0.onclick=()=>{ b.shift=null; b.off0=null; runAll(); };
     d.querySelector('.azm').onclick=()=>{ b.azUser=(((b.azUser??b.az)-1)%180+180)%180; runAll(); }; d.querySelector('.azp').onclick=()=>{ b.azUser=(((b.azUser??b.az)+1)%180+180)%180; runAll(); };
     const mrg=d.querySelector('.mrg'); mrg.onchange=e=>{ b.marginUser=e.target.value===''?null:+e.target.value; runAll(); }; d.querySelectorAll('.mq').forEach(x=>x.onclick=()=>{ b.marginUser=+x.dataset.v; runAll(); });
     const rst=d.querySelector('.rst'); if(rst) rst.onclick=()=>{ b.erased=[]; runAll(); };
@@ -229,7 +235,8 @@ function renderList(){
     const colr=d.querySelector('.colr'); if(colr) colr.onclick=()=>{ b.colsEdited=false; runAll(); };
     d.querySelector('input[type=checkbox]').onchange=e=>{ b.checked=e.target.checked; runAll(); };
     d.querySelector('.nm input').onchange=e=>{ b.name=e.target.value; redraw(); };
-    d.querySelector('select').onchange=e=>{ b.type=e.target.value; b.typeUser=true; runAll(); };
+    { const g=d.querySelector('.tpg'); const tog=e=>{ e.stopPropagation(); g.style.display=g.style.display==='none'?'grid':'none'; }; // 그림은 처음부터 펼쳐짐, 이름을 누르면 접기/펼치기 d.querySelector('.tpic').onclick=tog; d.querySelector('.tpbtn').onclick=tog;
+      g.querySelectorAll('.tpi').forEach(x=>x.onclick=e=>{ e.stopPropagation(); b.type=x.dataset.t; b.typeUser=true; runAll(); }); }
     d.querySelector('.del').onclick=()=>{ S.b=S.b.filter(x=>x!==b); runAll(); };
     const rngB=d.querySelector('.rng'); if(rngB) rngB.onclick=()=>{ S.maskFor=b.id; S.draw=[]; setMode('draw'); hint(`「${b.name}」 안에서 설치할 범위의 모서리를 클릭하고 「그리기 완료」`); const c=centroid(b.poly); S.center=c; syncTo(S.active); };
     const rx=d.querySelector('.rngx'); if(rx) rx.onclick=()=>{ delete b.mask; runAll(); };
@@ -256,8 +263,12 @@ function initK(){
     kakao.maps.event.addListener(m,'idle',()=>{ if(S.active==='k'){const c=m.getCenter(); S.center=[c.getLat(),c.getLng()]; S.zoom=kToZoom(m.getLevel());} });
     M.k=m; M.ready.k=true; applyMapOpts(); setupErase('k'); redraw();
   });
-  s.onerror=()=>msg('카카오 지도 로드 실패 — JS SDK 도메인(localhost:8080)·카카오맵 ON 확인'); document.head.appendChild(s);
+  s.onerror=()=>kakaoFail('스크립트 로드 실패'); document.head.appendChild(s);
+  setTimeout(()=>{ if(!M.ready.k) kakaoFail('응답 없음'); }, 7000);
 }
+function kakaoFail(why){ if(M.ready.k||S._kFailed) return; S._kFailed=true;
+  if(S.active==='k'){ const b=document.querySelector('#tabs button[data-m="v"]'); if(b) b.click(); }
+  msg(`카카오 지도를 불러오지 못해 브이월드 항공사진으로 전환했습니다 (${why}). 카카오 개발자콘솔 → 플랫폼 Web 에 이 사이트 주소(${location.origin})가 등록돼 있어야 카카오 지도·로드뷰가 뜹니다.`,'warn'); }
 function initV(){
   const m=L.map('mapV',{zoomControl:false,maxZoom:20}).setView(S.center,S.zoom);
   M.vSat=L.tileLayer(`https://api.vworld.kr/req/wmts/1.0.0/${K.vworld}/Satellite/{z}/{y}/{x}.jpeg`,{maxNativeZoom:19,maxZoom:20,attribution:'© 브이월드',crossOrigin:'anonymous'}).addTo(m);
@@ -288,6 +299,12 @@ function addPoly(pts, st, closed=true){
   if(M.ready.v){ const l=(closed?L.polygon(pts,{color:st.stroke,weight:st.w,fillColor:st.fill,fillOpacity:st.fo,dashArray:st.dash}):L.polyline(pts,{color:st.stroke,weight:st.w,dashArray:st.dash})).addTo(M.v); M.layers.v.push(l); }
   if(M.ready.k){ const path=pts.map(p=>new kakao.maps.LatLng(p[0],p[1])); const l=closed?new kakao.maps.Polygon({path,strokeColor:st.stroke,strokeWeight:st.w,strokeStyle:st.dash?'dash':'solid',fillColor:st.fill,fillOpacity:st.fo}):new kakao.maps.Polyline({path,strokeColor:st.stroke,strokeWeight:st.w}); l.setMap(M.k); M.layers.k.push(l); }
   if(M.ready.g){ const path=pts.map(p=>({lat:p[0],lng:p[1]})); const l=closed?new google.maps.Polygon({paths:path,strokeColor:st.stroke,strokeWeight:st.w,fillColor:st.fill,fillOpacity:st.fo,clickable:false}):new google.maps.Polyline({path,strokeColor:st.stroke,strokeWeight:st.w,clickable:false}); l.setMap(M.g); M.layers.g.push(l); }
+}
+const PIN_HTML='<div class="pin"><svg viewBox="0 0 24 34" width="26" height="36"><path d="M12 1C6 1 1.5 5.6 1.5 11.5c0 7.5 10.5 21 10.5 21s10.5-13.5 10.5-21C22.5 5.6 18 1 12 1z" fill="#2f7bff" stroke="#fff" stroke-width="1.5"/><circle cx="12" cy="11.5" r="4" fill="#fff"/></svg></div>';
+function addPin(pt){
+  if(M.ready.v){ const l=L.marker(pt,{icon:L.divIcon({className:'',html:PIN_HTML,iconSize:[26,36],iconAnchor:[13,34]}),interactive:false}).addTo(M.v); M.layers.v.push(l); }
+  if(M.ready.k){ const l=new kakao.maps.CustomOverlay({position:new kakao.maps.LatLng(pt[0],pt[1]),content:PIN_HTML,xAnchor:0.5,yAnchor:1,zIndex:6}); l.setMap(M.k); M.layers.k.push(l); }
+  if(M.ready.g){ const m=new google.maps.Marker({position:{lat:pt[0],lng:pt[1]},map:M.g}); M.layers.g.push(m); }
 }
 function addLabel(pt, html){
   if(M.ready.v){ const l=L.marker(pt,{icon:L.divIcon({className:'',html:`<div class="lbl">${html}</div>`,iconSize:null}),interactive:false}).addTo(M.v); M.layers.v.push(l); }
@@ -343,6 +360,7 @@ function setupErase(which){
 function redraw(){
   clearLayers(); const wp=+$('wp').value;
   S.obs.forEach(addObs);
+  if(S.focus){ addPoly(S.focus.poly,{stroke:'#ff4fa8',w:3,fill:'#ff4fa8',fo:.06}); addPin(S.focus.pt); }
   S.b.forEach(b=>{
     addPoly(b.poly, b.checked?{stroke:'#d1242f',w:2,fill:'#d1242f',fo:.05}:{stroke:'#9aa4b1',w:2,fill:'#ffffff',fo:.08,dash:'4 4'});
     if(b.mask) addPoly(b.mask,{stroke:'#ff9500',w:2,fill:'#ff9500',fo:.06,dash:'6 4'});
@@ -445,6 +463,7 @@ async function fetchParcel(lat,lng,opts){
     if(dup){ const want=park?'E':'C'; if(!!dup.whole!==whole||dup.type!==want){ dup.whole=whole; dup.type=want; dup.checked=true; } else dup.checked=!dup.checked; runAll(); hint(''); return; }
     const c=centroid(poly); setOrigin(c[0],c[1]);
     const dt=$('defType').value; const type=park?'E':(whole?'C':((dt==='C')?dt:'C'));
+    if(S.focus&&S.focus.pnu&&S.focus.pnu===p.pnu){ S.focus=null; showFocusCard(); } // 검색 표시한 필지를 선택하면 노란 테두리는 내림
     S.b.push({id:Date.now()+Math.random(),key,kind:'parcel',whole,name:`${park?'주차장':whole?'지번':'토지'} ${p.jibun||p.pnu||S.seq++}`,poly,checked:true,type,mods:[],rows:0,az:0,area:area(poly.map(toM)),info:p});
     if(!whole){ try{ const lats=poly.map(q=>q[0]), lngs=poly.map(q=>q[1]); const d2=await jsonp(VURL(`BOX(${Math.min(...lngs)},${Math.min(...lats)},${Math.max(...lngs)},${Math.max(...lats)})`,200)); featToBuildings(d2?.response?.result?.featureCollection?.features||[]); }catch(e){} }
     msg(park?`주차장 필지 ${p.jibun||''} — 주차장 캐노피(E)로 배치합니다. 건물 자리는 비웁니다. 주차열 방향이 다르면 카드의 방향(°)을 돌리세요.`
@@ -475,12 +494,37 @@ async function loadBox(){
 /* ---------- 주소 검색 ---------- */
 function geocode(){
   const q=$('addr').value.trim(); if(!q) return;
-  if(!(window.kakao&&kakao.maps&&kakao.maps.services)){ msg('카카오 검색 모듈 로드 전'); return; }
-  const go=(lat,lng,name)=>{ S.center=[lat,lng]; S.zoom=19; syncTo(S.active); if(!$('site').value)$('site').value=name||q; msg(''); };
-  new kakao.maps.services.Geocoder().addressSearch(q,(r,st)=>{
-    if(st===kakao.maps.services.Status.OK&&r.length){ go(+r[0].y,+r[0].x,r[0].address_name); return; }
-    new kakao.maps.services.Places().keywordSearch(q,(r2,st2)=>{ if(st2===kakao.maps.services.Status.OK&&r2.length) go(+r2[0].y,+r2[0].x,r2[0].address_name); else msg('검색 결과 없음'); });
-  });
+  hint('주소 검색 중… (지번·도로명 모두)');
+  const go=(lat,lng,name,src)=>{ S.center=[lat,lng]; S.zoom=19; syncTo(S.active); if(!$('site').value)$('site').value=name||q; msg(''); hint(''); focusParcel(lat,lng,name,src); };
+  // 1) 브이월드 주소 API (지번 PARCEL + 도로명 ROAD 동시 조회, JSONP — 카카오 없이도 동작)
+  const vw=type=>jsonp(`https://api.vworld.kr/req/address?service=address&request=getcoord&version=2.0&crs=epsg:4326&type=${type}&refine=true&simple=false&address=${encodeURIComponent(q)}&key=${K.vworld}&domain=${encodeURIComponent(K.domain)}`)
+    .then(d=>{ const r=d&&d.response; if(r&&r.status==='OK'&&r.result&&r.result.point) return {lat:+r.result.point.y,lng:+r.result.point.x,name:(r.refined&&r.refined.text)||q,src:type==='PARCEL'?'지번':'도로명'}; throw new Error('nf'); });
+  // 2) 카카오 (가능할 때): 주소 → 키워드(상호)
+  const kk=()=>new Promise((res,rej)=>{ if(!(window.kakao&&kakao.maps&&kakao.maps.services)) return rej(new Error('nokakao'));
+    new kakao.maps.services.Geocoder().addressSearch(q,(r,st)=>{ if(st===kakao.maps.services.Status.OK&&r.length) return res({lat:+r[0].y,lng:+r[0].x,name:r[0].address_name,src:r[0].road_address?'도로명':'지번'});
+      new kakao.maps.services.Places().keywordSearch(q,(r2,st2)=>{ if(st2===kakao.maps.services.Status.OK&&r2.length) res({lat:+r2[0].y,lng:+r2[0].x,name:r2[0].address_name,src:'상호'}); else rej(new Error('nf')); }); }); });
+  const any=ps=>new Promise((res,rej)=>{ let n=ps.length; ps.forEach(p=>p.then(res,()=>{ if(--n===0) rej(new Error('none')); })); });
+  any([vw('PARCEL'),vw('ROAD'),kk()]).then(r=>go(r.lat,r.lng,r.name,r.src)).catch(()=>{ msg('검색 결과 없음 — 지번(예: 상동면 월촌리 1296-2) 또는 도로명(예: 상동로375번길 74)으로 입력하세요'); hint(''); });
+}
+function showFocusCard(){ const c=$('focusCard'); if(!c) return; const f=S.focus; if(!f){ c.style.display='none'; return; }
+  const jb=f.jibun?`지번 ${f.jibun}`:''; $('fcAddr').textContent=f.name||jb; $('fcSub').textContent=(f.name&&jb&&!f.name.includes(f.jibun))?jb+(f.src?` · ${f.src} 검색`:''):(f.src?`${f.src} 검색`:'');
+  c.style.display='block'; }
+function focusApply(sel){ const f=S.focus; if(!f) return; const c=centroid(f.poly);
+  if(sel==='bld'){ setSel('bld'); setMode('pick'); fetchBuildingsInParcel(f.poly); return; }
+  setSel(sel); setMode('pick'); fetchParcel(c[0],c[1],{whole:sel==='all',park:sel==='park'}); }
+async function fetchBuildingsInParcel(poly){ hint('필지 안 건물 조회 중…'); try{ const lats=poly.map(q=>q[0]), lngs=poly.map(q=>q[1]); const d=await jsonp(VURL(`BOX(${Math.min(...lngs)},${Math.min(...lats)},${Math.max(...lngs)},${Math.max(...lats)})`,200)); const before=S.b.length; featToBuildings(d?.response?.result?.featureCollection?.features||[]);
+  // 필지 안(중심점 기준)에 있는 건물만 체크
+  const pm=poly.map(toM); let n=0; S.b.slice(before).forEach(b=>{ const c=centroid(b.poly); setOrigin(c[0],c[1]); const inP=inside([0,0],poly.map(toM)); if(inP){ b.checked=true; n++; } });
+  S.focus=null; showFocusCard(); runAll(); msg(n?`필지 안 건물 ${n}동을 선택해 배치했습니다. 빼고 싶은 건물은 클릭해서 해제`:'필지 안에 건물 외곽 정보가 없습니다 — 「토지」나 「전체 지번」으로 잡으세요'); hint(''); }catch(e){ msg('건물 조회 실패'); hint(''); } }
+/* 검색한 지번 필지를 분홍 테두리+핀으로 표시 (선택은 아직 아님 — 선택 방식 버튼으로 클릭) */
+async function focusParcel(lat,lng,name,src){
+  S.focus=null; redraw();
+  try{ const d=await jsonp(PURL(lat,lng)); const f=d?.response?.result?.featureCollection?.features; if(!f||!f.length) return;
+    const g=f[0].geometry, p=f[0].properties||{}; const ring=g.type==='Polygon'?g.coordinates[0]:g.coordinates[0][0];
+    const poly=ring.map(c=>[c[1],c[0]]); if(poly.length>1&&poly[0][0]===poly[poly.length-1][0]&&poly[0][1]===poly[poly.length-1][1]) poly.pop();
+    S.focus={poly,jibun:p.jibun||'',pnu:p.pnu||'',name:name||'',pt:[lat,lng],src}; redraw(); showFocusCard();
+    msg(`검색 결과(${src||''}): ${name||''} → 지번 <b>${p.jibun||''}</b> 필지를 분홍 테두리로 표시했습니다. 주소 카드의 버튼(건물만/토지/전체 지번/주차장) 중 하나를 누르세요.`,'info');
+  }catch(e){}
 }
 
 /* ---------- 탭 ---------- */
@@ -502,6 +546,7 @@ function rvShow(ll){ const [lat,lng]=ll||curCenter();
   const pos=new kakao.maps.LatLng(lat,lng);
   RV.client.getNearestPanoId(pos,80,id=>{ if(!id){ $('rvPano').innerHTML='<div class="tiny" style="padding:12px">반경 80m 안에 로드뷰가 없습니다. 지도를 도로 쪽으로 옮기고 「화면 중심으로」를 누르거나, 「카카오맵에서 열기」로 확인하세요.</div>'; RV=null; return; }
     if(!RV) RV={rv:new kakao.maps.Roadview($('rvPano')),client:new kakao.maps.RoadviewClient()}; RV.rv.setPanoId(id,pos); setTimeout(()=>RV&&RV.rv.relayout(),100); }); }
+if($('fcClose')) $('fcClose').onclick=()=>{ S.focus=null; showFocusCard(); redraw(); }; document.querySelectorAll('#focusCard [data-sel]').forEach(b=>b.onclick=()=>focusApply(b.dataset.sel));
 if($('optRv')) $('optRv').onclick=()=>{ const on=$('rv').style.display==='none'; $('rv').style.display=on?'flex':'none'; $('optRv').classList.toggle('on',on); if(on) rvShow(); };
 if($('rvClose')) $('rvClose').onclick=()=>{ $('rv').style.display='none'; $('optRv').classList.remove('on'); };
 if($('rvHere')) $('rvHere').onclick=()=>rvShow();
@@ -553,13 +598,18 @@ $('finish').onclick=()=>{
   if(S.maskFor){ const b=S.b.find(x=>x.id===S.maskFor); if(b){ b.mask=S.draw.slice(); b.checked=true; } S.maskFor=null; S.draw=[]; setMode('pick'); runAll(); return; }
   const poly=S.draw.slice(); const c=centroid(poly); setOrigin(c[0],c[1]);
   const dType=S.drawType||$('defType').value; S.b.push({id:Date.now(),key:'draw'+S.seq,kind:'draw',name:`${dType==='E'?'주차장':'면'}${S.seq++}`,poly,checked:true,type:dType,typeUser:S.drawType?true:undefined,mods:[],rows:0,az:0,area:area(poly.map(toM))}); S.draw=[]; setMode('pick'); runAll(); };
-$('clearAll').onclick=()=>{ if(S.b.length&&!confirm('모든 건물·배치를 지울까요?'))return; S.b=[]; S.obs=[]; S.draw=[]; S.seq=1; runAll(); };
+$('clearAll').onclick=()=>{ if(S.b.length&&!confirm('모든 건물·배치를 지울까요?'))return; S.b=[]; S.obs=[]; S.draw=[]; S.focus=null; showFocusCard(); S.seq=1; runAll(); };
 $('run').onclick=runAll;
 $('modPreset').onchange=e=>{ if(e.target.value==='custom')return; const [w,a,b]=e.target.value.split(','); $('wp').value=w;$('mw').value=a;$('mh').value=b; runAll(); };
 ['wp','mw','mh'].forEach(i=>$(i).onchange=()=>{$('modPreset').value='custom';runAll();});
 ['hrs','price'].forEach(i=>$(i).onchange=()=>totals());
 $('defType').onchange=()=>renderTypePick(); renderTypePick();
 ['margin','cgap','azim','ventA','bandN','bandPitch','bandPitchB','tiltC','tiersC','shadeAng','maxH','roofSlope','eStall','eAisle','eAuto','eDouble'].forEach(i=>{ if($(i)) $(i).onchange=runAll; });
+// 사용 순서 안내: 한 번 접으면 다음부터 접힌 채로
+try{ const g=$('guide'); if(g){ if(localStorage.getItem('guideClosed')==='1') g.open=false; g.addEventListener('toggle',()=>{ try{ localStorage.setItem('guideClosed',g.open?'0':'1'); }catch(e){} }); } }catch(e){}
+// 예상 못 한 오류는 화면에 알림 (조용히 멈추지 않게)
+window.addEventListener('error',e=>{ try{ msg('화면 오류: '+(e.message||'')+' — 새로고침(F5) 후에도 반복되면 알려 주세요','warn'); }catch(_){} });
+window.addEventListener('unhandledrejection',e=>{ try{ const m=(e.reason&&e.reason.message)||String(e.reason||''); if(/load|nf|none|nokakao/.test(m)) return; msg('처리 오류: '+m,'warn'); }catch(_){} });
 $('goAddr').onclick=geocode; $('addr').addEventListener('keydown',e=>{if(e.key==='Enter')geocode();});
 $('print').onclick=()=>window.print();
 const P_IDS=['wp','mw','mh','margin','cgap','azim','ventA','bandN','bandPitch','bandPitchB','tiltC','tiersC','shadeAng','maxH','roofSlope','obsSize','obsGap','eStall','eAisle','eDouble','hrs','price','defType','modPreset'];
